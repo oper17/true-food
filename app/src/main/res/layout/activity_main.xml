@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@color/cream">
+    <LinearLayout
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:padding="24dp">
+
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Dirty Ingredients" android:textSize="30sp" android:textStyle="bold"
+            android:textColor="@color/dark"/>
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="Check a food product before you buy it."
+            android:textSize="16sp" android:textColor="@color/gray" android:layout_marginTop="4dp"/>
+<AutoCompleteTextView
+    android:id="@+id/searchBox"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:hint="Enter a food product name"
+    android:completionThreshold="2" />
+	
+
+        <Button android:id="@+id/searchButton" android:layout_width="match_parent"
+            android:layout_height="52dp" android:layout_marginTop="12dp"
+            android:text="CHECK INGREDIENTS" android:textStyle="bold"/>
+
+        <ProgressBar android:id="@+id/progress" android:layout_width="wrap_content"
+            android:layout_height="wrap_content" android:layout_gravity="center"
+            android:layout_marginTop="24dp" android:visibility="gone"/>
+
+        <TextView android:id="@+id/statusText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="16dp"
+            android:textColor="@color/gray" android:textSize="14sp"/>
+
+        <LinearLayout android:id="@+id/resultCard" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:orientation="vertical"
+            android:layout_marginTop="20dp" android:visibility="gone"
+            android:padding="20dp" android:background="@drawable/verdict_clean">
+
+            <TextView android:id="@+id/verdictText" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:textSize="24sp"
+                android:textStyle="bold"/>
+            <TextView android:id="@+id/flaggedTitle" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginTop="16dp"
+                android:text="Flagged ingredients found" android:textStyle="bold"
+                android:textSize="16sp"/>
+            <TextView android:id="@+id/flaggedText" android:layout_width="match_parent"
+                android:layout_height="wrap_content" android:layout_marginTop="6dp"
+                android:textSize="15sp"/>
+        </LinearLayout>
+
+        <TextView android:id="@+id/ingredientsTitle" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="24dp"
+            android:text="Ingredient information found online" android:textSize="19sp"
+            android:textStyle="bold" android:textColor="@color/dark"/>
+
+        <TextView android:id="@+id/ingredientsText" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="8dp"
+            android:textSize="15sp" android:textColor="@color/dark"/>
+
+        <TextView android:id="@+id/disclaimer" android:layout_width="match_parent"
+            android:layout_height="wrap_content" android:layout_marginTop="28dp"
+            android:text="This is an informational screening tool. Online ingredient data can be incomplete or outdated; verify the package label."
+            android:textSize="12sp" android:textColor="@color/gray"/>
+    </LinearLayout>
+</ScrollView>

@@ -1,0 +1,7 @@
+# .gitignore
+local.properties
+# Build outputs
+build/
+app/build/
+*.apk
+*.aar

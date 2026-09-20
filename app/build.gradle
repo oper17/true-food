@@ -1,0 +1,45 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Load properties from local.properties (git-ignored file)
+def localProperties = new Properties()
+def localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.withInputStream { localProperties.load(it) }
+}
+
+android {
+    namespace 'com.example.dirtyingredients'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.example.dirtyingredients'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+
+        // Inject USDA_API_KEY into BuildConfig
+        buildConfigField "String", "USDA_API_KEY",
+                "\"${localProperties.getProperty('USDA_API_KEY', '')}\""
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
+}
+
+configurations.configureEach {
+    resolutionStrategy.eachDependency { details ->
+        if (details.requested.group == "org.jetbrains.kotlin" &&
+            details.requested.name.startsWith("kotlin-stdlib")) {
+            details.useVersion("1.8.22")
+        }
+    }
+}
