@@ -1,0 +1,209 @@
+{
+  "Dairy": {
+    "default_enabled": true,
+    "ingredients": [
+      "milk",
+      "whole milk",
+      "skim milk",
+      "skimmed milk",
+      "milk fat",
+      "milk solids",
+      "cream",
+      "heavy cream",
+      "butter",
+      "butterfat",
+      "buttermilk",
+      "cheese",
+      "whey",
+      "whey protein isolate",
+      "whey protein concentrate",
+      "casein",
+      "caseinate",
+      "sodium caseinate",
+      "calcium caseinate",
+      "lactose",
+      "condensed milk",
+      "evaporated milk",
+      "ghee",
+      "curd",
+      "yogurt"
+    ]
+  },
+  "Gluten": {
+    "default_enabled": true,
+    "ingredients": [
+      "wheat",
+      "wheat flour",
+      "whole wheat",
+      "enriched wheat flour",
+      "wheat gluten",
+      "barley",
+      "barley malt",
+      "rye",
+      "spelt",
+      "triticale",
+      "kamut",
+      "durum",
+      "semolina",
+      "farina",
+      "bulgur",
+      "vital wheat gluten",
+      "malt",
+      "malt extract",
+      "malt syrup",
+      "malt flavoring",
+      "malt vinegar"
+    ]
+  },
+  "Non-Vegetarian": {
+    "default_enabled": true,
+    "ingredients": [
+      "chicken",
+      "beef",
+      "pork",
+      "turkey",
+      "lamb",
+      "bacon",
+      "ham",
+      "duck",
+      "gelatin",
+      "pork gelatin",
+      "beef gelatin",
+      "animal fat",
+      "lard",
+      "tallow",
+      "beef tallow",
+      "rennet",
+      "animal rennet",
+      "isinglass",
+      "anchovy",
+      "anchovies",
+      "fish",
+      "salmon",
+      "tuna",
+      "shrimp",
+      "crab",
+      "lobster",
+      "oyster",
+      "oyster sauce",
+      "fish sauce",
+      "chicken broth",
+      "beef broth",
+      "bone broth",
+      "carmine",
+      "cochineal"
+    ]
+  },
+  "Non-Vegan": {
+    "default_enabled": true,
+    "ingredients": [
+      "milk",
+      "butter",
+      "cream",
+      "cheese",
+      "whey",
+      "casein",
+      "caseinate",
+      "lactose",
+      "honey",
+      "beeswax",
+      "egg",
+      "eggs",
+      "egg white",
+      "egg yolk",
+      "egg whites",
+      "egg yolks",
+      "albumen",
+      "gelatin",
+      "confectioner's glaze",
+      "shellac",
+      "lanolin",
+      "carmine",
+      "cochineal",
+      "vitamin d3",
+      "chicken",
+      "beef",
+      "pork",
+      "turkey",
+      "fish",
+      "anchovy",
+      "lard",
+      "tallow"
+    ]
+  },
+  "Artificial Colors": {
+    "default_enabled": true,
+    "ingredients": [
+      "red 40",
+      "red 3",
+      "yellow 5",
+      "yellow 6",
+      "blue 1",
+      "blue 2",
+      "caramel color",
+      "titanium dioxide",
+      "citrus red 2"
+    ]
+  },
+  "Preservatives": {
+    "default_enabled": true,
+    "ingredients": [
+      "bht",
+      "bha",
+      "tbhq",
+      "sodium benzoate",
+      "potassium sorbate",
+      "sodium nitrite",
+      "sodium nitrate",
+      "propyl gallate",
+      "calcium propionate",
+      "sulfur dioxide"
+    ]
+  },
+  "Artificial Sweeteners": {
+    "default_enabled": true,
+    "ingredients": [
+      "aspartame",
+      "sucralose",
+      "saccharin",
+      "acesulfame potassium",
+      "acesulfame-k",
+      "neotame",
+      "advantame"
+    ]
+  },
+  "Emulsifiers & Thickening Agents": {
+    "default_enabled": true,
+    "ingredients": [
+      "carrageenan",
+      "polysorbate 60",
+      "polysorbate 80",
+      "carboxymethylcellulose",
+      "mono- and diglycerides",
+      "monoglycerides",
+      "diglycerides",
+      "sodium carboxymethylcellulose"
+    ]
+  },
+  "Flavor Enhancers & Additives": {
+    "default_enabled": true,
+    "ingredients": [
+      "monosodium glutamate",
+      "msg",
+      "autolyzed yeast extract",
+      "disodium inosinate",
+      "disodium guanylate",
+      "hydrolyzed vegetable protein"
+    ]
+  },
+  "Fats & Hydrogenated Oils": {
+    "default_enabled": true,
+    "ingredients": [
+      "partially hydrogenated oil",
+      "hydrogenated palm oil",
+      "hydrogenated soybean oil",
+      "partially hydrogenated soybean oil",
+      "partially hydrogenated cottonseed oil"
+    ]
+  }
+}
