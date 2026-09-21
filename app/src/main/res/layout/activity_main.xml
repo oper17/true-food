@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/mainRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/cream"
+    android:background="#F8F9FA"
+    android:fillViewport="true"
     android:focusable="true"
     android:focusableInTouchMode="true">
 
@@ -11,61 +13,77 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="20dp">
 
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Dirty Ingredients"
-            android:textColor="@color/dark"
-            android:textSize="30sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:text="Check a food product before you buy it."
-            android:textColor="@color/gray"
-            android:textSize="16sp" />
-
-        <!-- Search input container with barcode camera trigger -->
+        <!-- Header Section -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="16dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="TrueFood"
+                android:textColor="#111827"
+                android:textSize="32sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Screen ingredients • Shop clean alternates"
+                android:textColor="#6B7280"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- Search Bar Container -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:background="@drawable/bg_search_box"
             android:gravity="center_vertical"
-            android:orientation="horizontal">
+            android:orientation="horizontal"
+            android:paddingStart="16dp"
+            android:paddingEnd="8dp">
 
             <EditText
                 android:id="@+id/searchBox"
                 android:layout_width="0dp"
-                android:layout_height="wrap_content"
+                android:layout_height="match_parent"
                 android:layout_weight="1"
-                android:hint="Enter product name or barcode"
+                android:background="@null"
+                android:hint="Search food product or UPC..."
                 android:imeOptions="actionSearch"
-                android:inputType="text" />
+                android:inputType="text"
+                android:textColor="#111827"
+                android:textColorHint="#9CA3AF"
+                android:textSize="15sp" />
 
             <ImageButton
                 android:id="@+id/scanBarcodeButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="8dp"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
                 android:background="?attr/selectableItemBackgroundBorderless"
                 android:contentDescription="Scan Barcode"
                 android:padding="8dp"
                 android:src="@android:drawable/ic_menu_camera"
-                android:tint="@color/dark" />
+                app:tint="#374151" />
         </LinearLayout>
 
+        <!-- Primary Action Button -->
         <Button
             android:id="@+id/searchButton"
             android:layout_width="match_parent"
             android:layout_height="52dp"
             android:layout_marginTop="12dp"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
+            android:background="@drawable/bg_button_primary"
             android:text="CHECK INGREDIENTS"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
             android:textStyle="bold" />
 
         <ProgressBar
@@ -80,82 +98,167 @@
             android:id="@+id/statusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:textColor="@color/gray"
-            android:textSize="14sp" />
+            android:visibility="gone" />
 
+        <!-- Verdict Card Container -->
         <LinearLayout
             android:id="@+id/resultCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
+            android:layout_marginTop="16dp"
             android:background="@drawable/verdict_clean"
+            android:elevation="2dp"
             android:orientation="vertical"
             android:padding="20dp"
             android:visibility="gone">
 
+            <!-- Match Notice for Fallback/Close-Enough Searches -->
+            <TextView
+                android:id="@+id/matchNoticeText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:textColor="#B45309"
+                android:textSize="13sp"
+                android:textStyle="italic"
+                android:visibility="gone" />
+
+            <!-- Product Title & Brand Display -->
+            <TextView
+                android:id="@+id/productTitleText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="12dp"
+                android:textColor="#111827"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+
+            <!-- Verdict Badge -->
             <TextView
                 android:id="@+id/verdictText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textSize="24sp"
+                android:textSize="22sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/flaggedTitle"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="16dp"
-                android:text="Flagged ingredients found"
-                android:textSize="16sp"
+                android:layout_marginTop="12dp"
+                android:text="Flagged Ingredients"
+                android:textColor="#991B1B"
+                android:textSize="15sp"
                 android:textStyle="bold" />
 
             <TextView
                 android:id="@+id/flaggedText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:textSize="15sp" />
+                android:layout_marginTop="4dp"
+                android:textColor="#7F1D1D"
+                android:textSize="14sp" />
 
             <Button
                 android:id="@+id/walmartButton"
                 android:layout_width="wrap_content"
-                android:layout_height="44dp"
+                android:layout_height="42dp"
                 android:layout_marginTop="16dp"
-                android:backgroundTint="@color/dark"
-                android:paddingStart="24dp"
-                android:paddingEnd="24dp"
+                android:background="@drawable/bg_button_primary"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
                 android:text="BUY!"
-                android:textColor="@color/cream"
-                android:textSize="14sp"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/ingredientsTitle"
+        <!-- PANEL 1: Primary Product Ingredients Card -->
+        <LinearLayout
+            android:id="@+id/ingredientsCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="24dp"
-            android:text="Ingredient information found online"
-            android:textColor="@color/dark"
-            android:textSize="19sp"
-            android:textStyle="bold" />
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_card"
+            android:elevation="1dp"
+            android:orientation="vertical"
+            android:padding="20dp"
+            android:visibility="gone">
 
-        <TextView
-            android:id="@+id/ingredientsText"
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Primary Ingredients"
+                android:textColor="#111827"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/ingredientsText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:ellipsize="end"
+                android:lineSpacingExtra="4dp"
+                android:maxLines="4"
+                android:textColor="#374151"
+                android:textSize="14sp" />
+
+            <TextView
+                android:id="@+id/toggleIngredientsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:paddingTop="4dp"
+                android:paddingBottom="4dp"
+                android:text="Show More ▼"
+                android:textColor="#2563EB"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- PANEL 2: Clean Alternates Card -->
+        <LinearLayout
+            android:id="@+id/alternatesCard"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="@color/dark"
-            android:textSize="15sp" />
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_card"
+            android:elevation="1dp"
+            android:orientation="vertical"
+            android:padding="20dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/alternatesTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Clean Alternates"
+                android:textColor="#111827"
+                android:textSize="17sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/alternatesText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:lineSpacingExtra="4dp"
+                android:textColor="#374151"
+                android:textSize="14sp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/disclaimer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="28dp"
-            android:text="This is an informational screening tool. Online ingredient data can be incomplete or outdated; verify the package label."
-            android:textColor="@color/gray"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="16dp"
+            android:gravity="center"
+            android:text="Informational tool. Verify package label prior to consumption."
+            android:textColor="#9CA3AF"
             android:textSize="12sp" />
+
     </LinearLayout>
 </ScrollView>

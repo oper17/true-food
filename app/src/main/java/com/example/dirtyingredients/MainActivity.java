@@ -58,16 +58,108 @@ import androidx.activity.result.contract.ActivityResultContracts;
 
 
 public class MainActivity extends AppCompatActivity {
-    // 1. Change type from AutoCompleteTextView to EditText
+     // Member Variable Declarations
     private EditText searchBox; 
     private Button searchButton;
     private ProgressBar progress;
     private TextView statusText, verdictText, flaggedText, ingredientsText;
     private LinearLayout resultCard;
+
+    // Separate Panels & Expandable Ingredients
+    private View ingredientsCard;
+    private View alternatesCard;
+    private TextView alternatesTitle;
+    private TextView alternatesText;
+    private TextView toggleIngredientsButton;
+	private TextView productTitleText;
+private TextView matchNoticeText;
+
+    private boolean isIngredientsExpanded = false;
+
     private final Set<String> flaggedIngredients = new HashSet<>();
     private final Set<String> superiorTerms = new HashSet<>();
 
-    private void loadSuperiorTerms() {
+    @Override 
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        
+        android.util.Log.d("API_KEY_CHECK", "Key: " + BuildConfig.USDA_API_KEY);
+        Toast.makeText(this, "Key: " + BuildConfig.USDA_API_KEY, Toast.LENGTH_LONG).show();
+
+        setTitle("TrueFood");
+
+        // 1. Bind UI Components
+        bindViews();
+
+        // 2. Enable Clickable Span Links on Alternates Text
+        if (alternatesText != null) {
+            alternatesText.setMovementMethod(LinkMovementMethod.getInstance());
+        }
+        
+        // 3. Load Engine Sets
+        loadFlaggedIngredients();
+        loadSuperiorTerms();
+
+        // 4. Setup Barcode Scanner Button
+        ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
+        if (scanBarcodeButton != null) {
+            scanBarcodeButton.setOnClickListener(v -> openBarcodeScanner());
+        }
+
+        // 5. Attach AutoComplete Manager
+        SuggestionProvider usdaProvider = new UsdaSuggestionProvider();
+        FoodAutoCompleteManager autoCompleteManager = new FoodAutoCompleteManager(this, usdaProvider);
+        autoCompleteManager.attachToEditText(searchBox);
+
+        // 6. Setup Primary Retail Buy Button
+        Button walmartButton = findViewById(R.id.walmartButton);
+        if (walmartButton != null) {
+            walmartButton.setOnClickListener(v -> {
+                String currentQuery = searchBox.getText().toString().trim();
+                if (!currentQuery.isEmpty()) {
+                    openWalmartSearch(currentQuery);
+                }
+            });
+        }
+
+        // 7. Attach Search Action Listeners
+        searchButton.setOnClickListener(v -> search());
+        searchBox.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) { 
+                search(); 
+                return true; 
+            }
+            return false;
+        });
+    }
+
+    // Helper method to bind all views from activity_main.xml
+    private void bindViews() {
+    searchBox = findViewById(R.id.searchBox);
+    searchButton = findViewById(R.id.searchButton);
+    progress = findViewById(R.id.progress);
+    statusText = findViewById(R.id.statusText);
+    verdictText = findViewById(R.id.verdictText);
+    flaggedText = findViewById(R.id.flaggedText);
+    ingredientsText = findViewById(R.id.ingredientsText);
+    resultCard = findViewById(R.id.resultCard);
+
+    // New Title & Notice Views
+    productTitleText = findViewById(R.id.productTitleText);
+    matchNoticeText = findViewById(R.id.matchNoticeText);
+
+    // Separate Panels
+    ingredientsCard = findViewById(R.id.ingredientsCard);
+    alternatesCard = findViewById(R.id.alternatesCard);
+    alternatesTitle = findViewById(R.id.alternatesTitle);
+    alternatesText = findViewById(R.id.alternatesText);
+    toggleIngredientsButton = findViewById(R.id.toggleIngredientsButton);
+}
+
+	
+	
+private void loadSuperiorTerms() {
         try (BufferedReader br = new BufferedReader(
                 new InputStreamReader(getAssets().open("superior_ingredients.txt")))) {
             String line;
@@ -82,61 +174,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    @Override 
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
-        android.util.Log.d("API_KEY_CHECK", "Key: " + BuildConfig.USDA_API_KEY);
-
-        Toast.makeText(this, "Key: " + BuildConfig.USDA_API_KEY, Toast.LENGTH_LONG).show();
-        bindViews();
-        ingredientsText.setMovementMethod(LinkMovementMethod.getInstance());
-        
-        loadFlaggedIngredients();
-        loadSuperiorTerms();
-		ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
-scanBarcodeButton.setOnClickListener(v -> openBarcodeScanner());
-
-
-setTitle("TrueFood");
-        // 2. Attach the manager using attachToEditText
-        SuggestionProvider usdaProvider = new UsdaSuggestionProvider();
-        FoodAutoCompleteManager autoCompleteManager = new FoodAutoCompleteManager(this, usdaProvider);
-        autoCompleteManager.attachToEditText(searchBox);
-
-Button walmartButton = findViewById(R.id.walmartButton);
-
-walmartButton.setOnClickListener(v -> {
-    String currentQuery = searchBox.getText().toString().trim();
-    if (!currentQuery.isEmpty()) {
-        openWalmartSearch(currentQuery);
-    }
-});
-
-        // 3. Keep button and editor search listeners
-        searchButton.setOnClickListener(v -> search());
-        searchBox.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) { 
-                search(); 
-                return true; 
-            }
-            return false;
-        });
-    }
-	
-
-
-    private void bindViews() {
-        // 3. Casts automatically to AutoCompleteTextView
-        searchBox = findViewById(R.id.searchBox); 
-        searchButton = findViewById(R.id.searchButton);
-        progress = findViewById(R.id.progress);
-        statusText = findViewById(R.id.statusText);
-        resultCard = findViewById(R.id.resultCard);
-        verdictText = findViewById(R.id.verdictText);
-        flaggedText = findViewById(R.id.flaggedText);
-        ingredientsText = findViewById(R.id.ingredientsText);
-    }
+    
 
     private void loadFlaggedIngredients() {
         try (BufferedReader br = new BufferedReader(
@@ -626,8 +664,12 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         ingredientsText.setText(result.ingredients);
     }
 	
-	private void showResult(ProductResult result, String foodType, List<AlternateRanker.RankedProduct> alternates) {
-    resultCard.setVisibility(LinearLayout.VISIBLE);
+	    private void showResult(ProductResult result, String foodType, List<AlternateRanker.RankedProduct> alternates) {
+    resultCard.setVisibility(View.VISIBLE);
+
+    int colorClean = Color.parseColor("#166534");
+    int colorDirty = Color.parseColor("#991B1B");
+    int colorMuted = Color.parseColor("#4B5563");
 
     // Setup primary product BUY! button
     Button walmartButton = findViewById(R.id.walmartButton);
@@ -636,55 +678,110 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         walmartButton.setOnClickListener(v -> openWalmartSearch(result.name));
     }
 
+    View flaggedTitle = findViewById(R.id.flaggedTitle);
+
     if (!result.found) {
-        statusText.setText("No matching product with ingredient data was found.");
+        if (matchNoticeText != null) matchNoticeText.setVisibility(View.GONE);
+        if (productTitleText != null) productTitleText.setText("No Matching Product");
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("? PRODUCT NOT FOUND");
-        verdictText.setTextColor(Color.rgb(97, 97, 97));
-        flaggedText.setVisibility(TextView.GONE);
-        ingredientsText.setText("We cannot determine whether the ingredients are clean or dirty without a verified ingredient list.");
+        verdictText.setTextColor(colorMuted);
+        if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
+        flaggedText.setVisibility(View.GONE);
+        ingredientsCard.setVisibility(View.GONE);
+        alternatesCard.setVisibility(View.GONE);
         return;
     }
 
-    // 1. Header
-    String header = result.name;
-    if (!TextUtils.isEmpty(result.brand)) header += " • " + result.brand;
-    header += " | Type: " + foodType;
-    statusText.setText(header);
+    // 1. Format Product Title (Name + Brand)
+    String displayName = result.name;
+    if (!TextUtils.isEmpty(result.brand)) {
+        displayName += " (" + result.brand + ")";
+    }
+    if (productTitleText != null) {
+        productTitleText.setText(displayName);
+        productTitleText.setVisibility(View.VISIBLE);
+    }
 
-    // 2. Verdict Styling
+    // 2. Check Match Exactness
+    String userQuery = searchBox.getText().toString().trim().toLowerCase(Locale.US);
+    boolean isExactMatch = !TextUtils.isEmpty(userQuery) && 
+                           result.name.toLowerCase(Locale.US).contains(userQuery);
+
+    if (matchNoticeText != null) {
+        if (!isExactMatch) {
+            matchNoticeText.setText("No exact match found in USDA. Showing result for " + result.name);
+            matchNoticeText.setVisibility(View.VISIBLE);
+        } else {
+            matchNoticeText.setVisibility(View.GONE);
+        }
+    }
+
+    // 3. Verdict Styling
     if (TextUtils.isEmpty(result.ingredients.trim())) {
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("? INGREDIENTS UNAVAILABLE");
-        verdictText.setTextColor(Color.rgb(97, 97, 97));
-        flaggedText.setVisibility(TextView.GONE);
-        ingredientsText.setText("This product was found, but no ingredient list is available.");
+        verdictText.setTextColor(colorMuted);
+        if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
+        flaggedText.setVisibility(View.GONE);
+        ingredientsCard.setVisibility(View.GONE);
+        alternatesCard.setVisibility(View.GONE);
         return;
     }
 
     if (result.flagged.isEmpty()) {
         resultCard.setBackgroundResource(R.drawable.verdict_clean);
         verdictText.setText("✓ CLEAN INGREDIENTS");
-        verdictText.setTextColor(Color.rgb(27, 94, 32));
-        flaggedText.setVisibility(TextView.GONE);
+        verdictText.setTextColor(colorClean);
+        if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
+        flaggedText.setVisibility(View.GONE);
     } else {
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("⚠ DIRTY INGREDIENTS");
-        verdictText.setTextColor(Color.rgb(198, 40, 40));
-        flaggedText.setVisibility(TextView.VISIBLE);
+        verdictText.setTextColor(colorDirty);
+        if (flaggedTitle != null) flaggedTitle.setVisibility(View.VISIBLE);
+        flaggedText.setVisibility(View.VISIBLE);
         StringBuilder b = new StringBuilder();
         for (String f : result.flagged) b.append("• ").append(f).append('\n');
         flaggedText.setText(b.toString().trim());
     }
 
-    // 3. Build Clickable Text Body
-    SpannableStringBuilder spannableBuilder = new SpannableStringBuilder();
-    spannableBuilder.append("PRIMARY INGREDIENTS:\n").append(result.ingredients).append("\n\n");
+    // 4. Primary Ingredients Panel
+    ingredientsCard.setVisibility(View.VISIBLE);
+    ingredientsText.setText(result.ingredients);
+    
+    isIngredientsExpanded = false;
+    ingredientsText.setMaxLines(4);
+    ingredientsText.setEllipsize(TextUtils.TruncateAt.END);
+    toggleIngredientsButton.setText("Show More ▼");
 
+    ingredientsText.post(() -> {
+        if (ingredientsText.getLineCount() > 4) {
+            toggleIngredientsButton.setVisibility(View.VISIBLE);
+            toggleIngredientsButton.setOnClickListener(v -> {
+                if (isIngredientsExpanded) {
+                    ingredientsText.setMaxLines(4);
+                    ingredientsText.setEllipsize(TextUtils.TruncateAt.END);
+                    toggleIngredientsButton.setText("Show More ▼");
+                    isIngredientsExpanded = false;
+                } else {
+                    ingredientsText.setMaxLines(Integer.MAX_VALUE);
+                    ingredientsText.setEllipsize(null);
+                    toggleIngredientsButton.setText("Show Less ▲");
+                    isIngredientsExpanded = true;
+                }
+            });
+        } else {
+            toggleIngredientsButton.setVisibility(View.GONE);
+        }
+    });
+
+    // 5. Clean Alternates Panel
     if (!alternates.isEmpty()) {
-        spannableBuilder.append("─── CLEAN ALTERNATES FOR ")
-                        .append(foodType.toUpperCase(Locale.US))
-                        .append(" ───\n\n");
+        alternatesCard.setVisibility(View.VISIBLE);
+        alternatesTitle.setText("Clean Alternates");
+
+        SpannableStringBuilder spannableBuilder = new SpannableStringBuilder();
 
         for (int i = 0; i < alternates.size(); i++) {
             AlternateRanker.RankedProduct item = alternates.get(i);
@@ -692,7 +789,6 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
 
             int startPos = spannableBuilder.length();
 
-            // Construct text for this single item
             String itemHeader = item.getStarRating() + " " + alt.name;
             if (!TextUtils.isEmpty(alt.brand)) {
                 itemHeader += " (" + alt.brand + ")";
@@ -706,7 +802,6 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
             spannableBuilder.append(itemHeader);
             int endPos = spannableBuilder.length();
 
-            // Attach ClickableSpan specifically to THIS alternate's text block
             final ProductResult currentAlt = alt;
             spannableBuilder.setSpan(new ClickableSpan() {
                 @Override
@@ -717,16 +812,20 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
                 @Override
                 public void updateDrawState(@NonNull TextPaint ds) {
                     super.updateDrawState(ds);
-                    ds.setUnderlineText(false); // Remove default link underline
-                    ds.setColor(Color.parseColor("#1B5E20")); // Dark green text for alternates
+                    ds.setUnderlineText(false);
+                    ds.setColor(Color.parseColor("#166534"));
                 }
             }, startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
-    }
 
-    // Set the built spannable text to the TextView
-    ingredientsText.setText(spannableBuilder);
+        alternatesText.setText(spannableBuilder);
+    } else {
+        alternatesCard.setVisibility(View.GONE);
+    }
 }
+
+
+
 
 /**
  * Directly displays a dialog showing ingredients for ONLY the tapped alternate product,
