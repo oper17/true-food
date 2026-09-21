@@ -12,6 +12,12 @@ import java.util.*;
 import org.json.*;
 import java.nio.charset.StandardCharsets;
 
+import androidx.browser.customtabs.CustomTabColorSchemeParams;
+import androidx.browser.customtabs.CustomTabsIntent;
+import androidx.core.content.ContextCompat;
+
+import android.content.Intent;
+import android.net.Uri;
 
 import android.graphics.Color;
 import android.os.Bundle;
@@ -47,6 +53,8 @@ import java.util.Locale;
 import java.util.Set;
 
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -86,11 +94,24 @@ public class MainActivity extends AppCompatActivity {
         
         loadFlaggedIngredients();
         loadSuperiorTerms();
+		ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
+scanBarcodeButton.setOnClickListener(v -> openBarcodeScanner());
 
+
+setTitle("TrueFood");
         // 2. Attach the manager using attachToEditText
         SuggestionProvider usdaProvider = new UsdaSuggestionProvider();
         FoodAutoCompleteManager autoCompleteManager = new FoodAutoCompleteManager(this, usdaProvider);
         autoCompleteManager.attachToEditText(searchBox);
+
+Button walmartButton = findViewById(R.id.walmartButton);
+
+walmartButton.setOnClickListener(v -> {
+    String currentQuery = searchBox.getText().toString().trim();
+    if (!currentQuery.isEmpty()) {
+        openWalmartSearch(currentQuery);
+    }
+});
 
         // 3. Keep button and editor search listeners
         searchButton.setOnClickListener(v -> search());
@@ -103,6 +124,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 	
+
 
     private void bindViews() {
         // 3. Casts automatically to AutoCompleteTextView
@@ -339,7 +361,28 @@ public enum MatchQuality {
     CLOSE_ENOUGH, // Relaxed fallback match
     NONE        // Not found
 }
+private void openWalmartSearch(String foodQuery) {
+        String walmartUrl = WalmartUrlBuilder.buildSearchUrl(foodQuery);
 
+        // Customize tab toolbar colors to match your app theme
+        CustomTabColorSchemeParams colorParams = new CustomTabColorSchemeParams.Builder()
+                .setToolbarColor(ContextCompat.getColor(this, R.color.cream)) // or @color/dark
+                .build();
+
+        CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder()
+                .setDefaultColorSchemeParams(colorParams)
+                .setShowTitle(true) // Show page title at top
+                .setUrlBarHidingEnabled(true) // Auto-hide toolbar on scroll
+                .build();
+
+        try {
+            customTabsIntent.launchUrl(this, Uri.parse(walmartUrl));
+        } catch (Exception e) {
+            // Fallback: If Custom Tabs are unsupported, open standard external browser
+            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(walmartUrl));
+            startActivity(browserIntent);
+        }
+    }
 private ProductResult searchUSDA(String productName) throws Exception {
     if (productName == null || productName.trim().isEmpty()) {
         return ProductResult.notFound();
@@ -582,8 +625,16 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
 
         ingredientsText.setText(result.ingredients);
     }
-private void showResult(ProductResult result, String foodType, List<AlternateRanker.RankedProduct> alternates) {
+	
+	private void showResult(ProductResult result, String foodType, List<AlternateRanker.RankedProduct> alternates) {
     resultCard.setVisibility(LinearLayout.VISIBLE);
+
+    // Setup primary product BUY! button
+    Button walmartButton = findViewById(R.id.walmartButton);
+    if (walmartButton != null) {
+        walmartButton.setText("BUY!");
+        walmartButton.setOnClickListener(v -> openWalmartSearch(result.name));
+    }
 
     if (!result.found) {
         statusText.setText("No matching product with ingredient data was found.");
@@ -678,7 +729,8 @@ private void showResult(ProductResult result, String foodType, List<AlternateRan
 }
 
 /**
- * Directly displays a dialog showing ingredients for ONLY the tapped alternate product.
+ * Directly displays a dialog showing ingredients for ONLY the tapped alternate product,
+ * including a "BUY!" action button that launches a Walmart Custom Tab for the alternate.
  */
 private void showAlternateIngredientsDialog(ProductResult altProduct) {
     String title = altProduct.name;
@@ -690,8 +742,10 @@ private void showAlternateIngredientsDialog(ProductResult altProduct) {
             .setTitle(title)
             .setMessage("INGREDIENTS:\n\n" + altProduct.ingredients)
             .setPositiveButton("Close", null)
+            .setNeutralButton("BUY!", (dialog, which) -> openWalmartSearch(altProduct.name))
             .show();
 }
+
 
 
 
@@ -814,6 +868,27 @@ private void showResult3(ProductResult result) {
     }
 
     ingredientsText.setText(result.ingredients);
+}
+
+// Inside MainActivity.java
+
+private final ActivityResultLauncher<Intent> barcodeLauncher = registerForActivityResult(
+        new ActivityResultContracts.StartActivityForResult(),
+        result -> {
+            if (result.getResultCode() == RESULT_OK && result.getData() != null) {
+                String scannedBarcode = result.getData().getStringExtra(BarcodeScannerActivity.EXTRA_BARCODE);
+                if (scannedBarcode != null) {
+                    searchBox.setText(scannedBarcode);
+                    search(); // Automatically trigger search for the scanned barcode
+                }
+            }
+        }
+);
+
+// Call this from a button click (e.g. barcode icon in search bar)
+private void openBarcodeScanner() {
+    Intent intent = new Intent(this, BarcodeScannerActivity.class);
+    barcodeLauncher.launch(intent);
 }
 
 

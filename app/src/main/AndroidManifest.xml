@@ -1,16 +1,40 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <application
-        android:theme="@style/AppTheme"
-        android:label="TrueFood"
         android:allowBackup="true"
-        android:supportsRtl="true">
-        <activity android:name=".MainActivity" android:exported="true">
+        android:label="TrueFood"
+        android:supportsRtl="true"
+        android:theme="@style/AppTheme">
+
+        <!-- ML Kit automatically downloads barcode scanning models on app install -->
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode" />
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Barcode Scanner Activity -->
+        <activity
+            android:name=".BarcodeScannerActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
+
     </application>
+
 </manifest>
