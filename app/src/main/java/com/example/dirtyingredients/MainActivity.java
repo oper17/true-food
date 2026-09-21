@@ -53,6 +53,7 @@ import java.util.Locale;
 import java.util.Set;
 
 
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 
@@ -968,17 +969,13 @@ private void showResult3(ProductResult result) {
 
     ingredientsText.setText(result.ingredients);
 }
-
-// Inside MainActivity.java
-
 private final ActivityResultLauncher<Intent> barcodeLauncher = registerForActivityResult(
         new ActivityResultContracts.StartActivityForResult(),
         result -> {
             if (result.getResultCode() == RESULT_OK && result.getData() != null) {
                 String scannedBarcode = result.getData().getStringExtra(BarcodeScannerActivity.EXTRA_BARCODE);
-                if (scannedBarcode != null) {
-                    searchBox.setText(scannedBarcode);
-                    search(); // Automatically trigger search for the scanned barcode
+                if (scannedBarcode != null && !scannedBarcode.trim().isEmpty()) {
+                    lookupBarcodeAndSearch(scannedBarcode.trim());
                 }
             }
         }
@@ -989,6 +986,73 @@ private void openBarcodeScanner() {
     Intent intent = new Intent(this, BarcodeScannerActivity.class);
     barcodeLauncher.launch(intent);
 }
+
+/**
+ * Native background task to map GTIN barcode -> Product Title via USDA API,
+ * update searchBox with the title, and call search().
+ */
+private void lookupBarcodeAndSearch(String gtin) {
+    if (progress != null) progress.setVisibility(View.VISIBLE);
+
+    new Thread(() -> {
+        String productName = gtin; // Fallback to raw barcode if lookup fails
+        
+        try {
+            // Build USDA search URL using GTIN barcode
+            String urlString = "https://api.nal.usda.gov/fdc/v1/foods/search?query=" 
+                    + java.net.URLEncoder.encode(gtin, "UTF-8") 
+                    + "&api_key=" + BuildConfig.USDA_API_KEY;
+
+            java.net.URL url = new java.net.URL(urlString);
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setRequestMethod("GET");
+            conn.setConnectTimeout(5000);
+            conn.setReadTimeout(5000);
+
+            if (conn.getResponseCode() == 200) {
+                // Read Response Stream
+                java.io.BufferedReader reader = new java.io.BufferedReader(
+                        new java.io.InputStreamReader(conn.getInputStream()));
+                StringBuilder builder = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    builder.append(line);
+                }
+                reader.close();
+
+                // Parse JSON natively without external model classes
+                org.json.JSONObject responseJson = new org.json.JSONObject(builder.toString());
+                org.json.JSONArray foods = responseJson.optJSONArray("foods");
+
+                if (foods != null && foods.length() > 0) {
+                    org.json.JSONObject firstFood = foods.getJSONObject(0);
+                    String description = firstFood.optString("description", "");
+                    String brand = firstFood.optString("brandOwner", "");
+
+                    if (!description.isEmpty()) {
+                        productName = description;
+                        if (!brand.isEmpty()) {
+                            productName = description + " (" + brand + ")";
+                        }
+                    }
+                }
+            }
+            conn.disconnect();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        // Return to Main/UI thread to update searchBox and run search()
+        final String finalProductName = productName;
+        runOnUiThread(() -> {
+            if (progress != null) progress.setVisibility(View.GONE);
+            searchBox.setText(finalProductName);
+            search();
+        });
+    }).start();
+}
+
+
 
 
     public static class ProductResult {

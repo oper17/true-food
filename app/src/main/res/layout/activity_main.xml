@@ -15,30 +15,70 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <!-- Header Section -->
-        <LinearLayout
+        <!-- Enhanced Header Bar with Settings Button -->
+        <RelativeLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:layout_marginBottom="16dp"
-            android:orientation="vertical">
+            android:layout_marginBottom="20dp">
 
-            <TextView
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="TrueFood"
-                android:textColor="#111827"
-                android:textSize="32sp"
-                android:textStyle="bold" />
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_toStartOf="@id/settingsButton"
+                android:orientation="vertical">
 
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="4dp"
-                android:text="Screen ingredients • Shop clean alternates"
-                android:textColor="#6B7280"
-                android:textSize="14sp" />
-        </LinearLayout>
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <!-- App Brand Badge -->
+                    <TextView
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginEnd="10dp"
+                        android:background="@drawable/bg_button_primary"
+                        android:gravity="center"
+                        android:text="TF"
+                        android:textColor="#FFFFFF"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="TrueFood"
+                        android:textColor="#111827"
+                        android:textSize="26sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="Screen ingredients • Shop clean alternates"
+                    android:textColor="#6B7280"
+                    android:textSize="13sp" />
+            </LinearLayout>
+
+            <!-- Settings Button -->
+            <ImageButton
+                android:id="@+id/settingsButton"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Settings"
+                android:padding="10dp"
+                android:src="@android:drawable/ic_menu_preferences"
+                app:tint="#374151" />
+        </RelativeLayout>
 
         <!-- Search Bar Container -->
         <LinearLayout
@@ -112,7 +152,6 @@
             android:padding="20dp"
             android:visibility="gone">
 
-            <!-- Match Notice for Fallback/Close-Enough Searches -->
             <TextView
                 android:id="@+id/matchNoticeText"
                 android:layout_width="match_parent"
@@ -123,7 +162,6 @@
                 android:textStyle="italic"
                 android:visibility="gone" />
 
-            <!-- Product Title & Brand Display -->
             <TextView
                 android:id="@+id/productTitleText"
                 android:layout_width="match_parent"
@@ -133,7 +171,6 @@
                 android:textSize="20sp"
                 android:textStyle="bold" />
 
-            <!-- Verdict Badge -->
             <TextView
                 android:id="@+id/verdictText"
                 android:layout_width="match_parent"
