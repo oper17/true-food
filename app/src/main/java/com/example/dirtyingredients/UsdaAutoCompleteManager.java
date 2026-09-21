@@ -5,8 +5,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.view.View;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
+import android.widget.Filter;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -30,23 +33,77 @@ public class UsdaAutoCompleteManager {
 
     private ArrayAdapter<String> adapter;
     private Runnable searchRunnable;
-    private boolean isSelectingFromList = false; // Flag to stop re-opening on click
+    
+    // Tracks current selection state and exact selected string
+    private String selectedText = "";
+    private boolean isSelectingFromList = false;
 
     public UsdaAutoCompleteManager(Context context) {
         this.context = context;
     }
 
     public void attachToTextView(AutoCompleteTextView autoCompleteTextView) {
-        adapter = new ArrayAdapter<>(context, android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
+        // Custom Filter to suppress suggestions if a selection was made or matches selected text
+        adapter = new ArrayAdapter<String>(context, android.R.layout.simple_dropdown_item_1line, new ArrayList<>()) {
+            @Override
+            public Filter getFilter() {
+                return new Filter() {
+                    @Override
+                    protected FilterResults performFiltering(CharSequence constraint) {
+                        FilterResults filterResults = new FilterResults();
+                        // Suppress filtering if user just clicked or text equals last selection
+                        if (constraint != null && !isSelectingFromList && !constraint.toString().trim().equals(selectedText)) {
+                            filterResults.values = adapter;
+                            filterResults.count = adapter.getCount();
+                        }
+                        return filterResults;
+                    }
+
+                    @Override
+                    protected void publishResults(CharSequence constraint, FilterResults results) {
+                        if (isSelectingFromList || (constraint != null && constraint.toString().trim().equals(selectedText))) {
+                            autoCompleteTextView.dismissDropDown();
+                        } else if (results != null && results.count > 0) {
+                            adapter.notifyDataSetChanged();
+                        } else {
+                            adapter.notifyDataSetInvalidated();
+                        }
+                    }
+                };
+            }
+        };
+
         autoCompleteTextView.setAdapter(adapter);
 
-        // Handle item selection: close drop-down and set flag
+        // Handle item selection: record selection, kill dropdown, and focus search button
         autoCompleteTextView.setOnItemClickListener((parent, view, position, id) -> {
-            isSelectingFromList = true; // Block TextWatcher from running search
+            String selection = (String) parent.getItemAtPosition(position);
+            selectedText = selection != null ? selection.trim() : "";
+            isSelectingFromList = true;
+
             if (searchRunnable != null) {
-                handler.removeCallbacks(searchRunnable); // Cancel pending searches
+                handler.removeCallbacks(searchRunnable);
             }
+
+            // 1. Clear adapter & forcefully close popup
+            adapter.clear();
+            adapter.notifyDataSetChanged();
             autoCompleteTextView.dismissDropDown();
+
+            // 2. Hide soft keyboard
+            InputMethodManager imm = (InputMethodManager) context.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(autoCompleteTextView.getWindowToken(), 0);
+            }
+
+            // 3. Move focus to searchButton
+            autoCompleteTextView.clearFocus();
+            if (autoCompleteTextView.getRootView() != null) {
+                View button = autoCompleteTextView.getRootView().findViewById(R.id.searchButton);
+                if (button != null) {
+                    button.requestFocus();
+                }
+            }
         });
 
         autoCompleteTextView.addTextChangedListener(new TextWatcher() {
@@ -62,42 +119,59 @@ public class UsdaAutoCompleteManager {
 
             @Override
             public void afterTextChanged(Editable s) {
-                // If text changed because user selected an item, skip API call
-                if (isSelectingFromList) {
-                    isSelectingFromList = false; // Reset flag for next manual keystroke
+                String currentText = s.toString().trim();
+
+                // If user edits text so it no longer equals the selection, reset selection state
+                if (!currentText.equals(selectedText)) {
+                    isSelectingFromList = false;
+                    selectedText = ""; 
+                }
+
+                // Skip auto-complete API call if user selected an item or text equals previous selection
+                if (isSelectingFromList || currentText.equals(selectedText)) {
+                    autoCompleteTextView.dismissDropDown();
                     return;
                 }
 
-                String query = s.toString().trim();
-
-                if (query.length() < 2) {
+                if (currentText.length() < 2) {
                     updateSuggestionsList(new ArrayList<>(), autoCompleteTextView);
                     return;
                 }
 
+                // Debounce search requests
                 searchRunnable = () -> executor.execute(() -> {
                     try {
-                        List<String> suggestions = fetchUsdaSuggestions(query);
+                        List<String> suggestions = fetchUsdaSuggestions(currentText);
                         handler.post(() -> updateSuggestionsList(suggestions, autoCompleteTextView));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
                 });
 
-                handler.postDelayed(searchRunnable, 200);
+                handler.postDelayed(searchRunnable, 300);
             }
         });
     }
 
     private void updateSuggestionsList(List<String> suggestions, AutoCompleteTextView autoCompleteTextView) {
+        String currentText = autoCompleteTextView.getText().toString().trim();
+
+        // Do NOT show dropdown if user made a selection, text equals selection, or view lost focus
+        if (isSelectingFromList || currentText.equals(selectedText) || !autoCompleteTextView.hasFocus()) {
+            adapter.clear();
+            adapter.notifyDataSetChanged();
+            autoCompleteTextView.dismissDropDown();
+            return;
+        }
+
         adapter.clear();
-        // Do not display if user has since closed the dropdown or selected an item
-        if (suggestions != null && !suggestions.isEmpty() && !isSelectingFromList) {
+        if (suggestions != null && !suggestions.isEmpty()) {
             adapter.addAll(suggestions);
             adapter.notifyDataSetChanged();
             autoCompleteTextView.showDropDown();
         } else {
             adapter.notifyDataSetInvalidated();
+            autoCompleteTextView.dismissDropDown();
         }
     }
 

@@ -13,44 +13,92 @@ import org.json.*;
 import java.nio.charset.StandardCharsets;
 
 
+import android.graphics.Color;
+import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.TextPaint;
+import android.text.TextUtils;
+import android.text.method.LinkMovementMethod;
+import android.text.style.ClickableSpan;
+import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.widget.AutoCompleteTextView;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+
+
+
 public class MainActivity extends AppCompatActivity {
-    private AutoCompleteTextView searchBox;
+    // 1. Change type from AutoCompleteTextView to EditText
+    private EditText searchBox; 
     private Button searchButton;
     private ProgressBar progress;
     private TextView statusText, verdictText, flaggedText, ingredientsText;
     private LinearLayout resultCard;
     private final Set<String> flaggedIngredients = new HashSet<>();
-     @Override protected void onCreate(Bundle savedInstanceState) {
+    private final Set<String> superiorTerms = new HashSet<>();
+
+    private void loadSuperiorTerms() {
+        try (BufferedReader br = new BufferedReader(
+                new InputStreamReader(getAssets().open("superior_ingredients.txt")))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                line = normalize(line);
+                if (!line.isEmpty() && !line.startsWith("#")) {
+                    superiorTerms.add(line);
+                }
+            }
+        } catch (Exception e) {
+            Toast.makeText(this, "Could not load superior ingredient list.", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    @Override 
+    protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-		android.util.Log.d("API_KEY_CHECK", "Key: " + BuildConfig.USDA_API_KEY);
+        android.util.Log.d("API_KEY_CHECK", "Key: " + BuildConfig.USDA_API_KEY);
 
-    // Or show as a quick pop-up on screen
-    Toast.makeText(this, "Key: " + BuildConfig.USDA_API_KEY, Toast.LENGTH_LONG).show();
+        Toast.makeText(this, "Key: " + BuildConfig.USDA_API_KEY, Toast.LENGTH_LONG).show();
         bindViews();
+        ingredientsText.setMovementMethod(LinkMovementMethod.getInstance());
+        
         loadFlaggedIngredients();
+        loadSuperiorTerms();
 
-        // Attach the autocomplete manager
-        UsdaAutoCompleteManager autoCompleteManager = new UsdaAutoCompleteManager(this);
-        autoCompleteManager.attachToTextView(searchBox);
+        // 2. Attach the manager using attachToEditText
+        SuggestionProvider usdaProvider = new UsdaSuggestionProvider();
+        FoodAutoCompleteManager autoCompleteManager = new FoodAutoCompleteManager(this, usdaProvider);
+        autoCompleteManager.attachToEditText(searchBox);
 
-        // 1. Hide the suggestion dropdown immediately after the user selects an item
-        searchBox.setOnItemClickListener((parent, view, position, id) -> {
-            searchBox.dismissDropDown();
-            // Optional: Automatically trigger the search when a suggestion is clicked
-            // search(); 
-        });
-
-        // 2. Re-show suggestions if the user taps the search box again
-        searchBox.setOnClickListener(v -> {
-            if (searchBox.getText().length() >= 2) {
-                searchBox.showDropDown();
-            }
-        });
-
+        // 3. Keep button and editor search listeners
         searchButton.setOnClickListener(v -> search());
         searchBox.setOnEditorActionListener((v, actionId, event) -> {
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) { search(); return true; }
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) { 
+                search(); 
+                return true; 
+            }
             return false;
         });
     }
@@ -87,7 +135,7 @@ public class MainActivity extends AppCompatActivity {
                 .replaceAll("\\s+", " ").trim();
     }
 
-    private void search() {
+    private void search2() {
         final String product = searchBox.getText().toString().trim();
         if (TextUtils.isEmpty(product)) {
             searchBox.setError("Enter a food product name");
@@ -103,7 +151,7 @@ public class MainActivity extends AppCompatActivity {
         new Thread(() -> {
             try {
                 ProductResult result = searchUSDA(product);//searchOpenFoodFacts(product);
-                runOnUiThread(() -> showResult(result));
+               // runOnUiThread(() -> showResult(result));
             } catch (Exception e) {
                 runOnUiThread(() -> {
                     statusText.setText("Couldn't retrieve product information.");
@@ -117,6 +165,62 @@ public class MainActivity extends AppCompatActivity {
             }
         }).start();
     }
+
+private void search() {
+    final String product = searchBox.getText().toString().trim();
+    if (TextUtils.isEmpty(product)) {
+        searchBox.setError("Enter a food product name");
+        return;
+    }
+
+    progress.setVisibility(ProgressBar.VISIBLE);
+    searchButton.setEnabled(false);
+    resultCard.setVisibility(LinearLayout.GONE);
+    statusText.setText("Searching USDA FoodData Central…");
+    ingredientsText.setText("");
+
+    new Thread(() -> {
+    try {
+        // 1. Fetch primary product
+        ProductResult primaryResult = searchUSDA3(product);
+
+        // 2. Classify category
+        RuleBasedFoodClassifier classifier = new RuleBasedFoodClassifier();
+        String foodType = classifier.classify(primaryResult.name);
+        if (foodType == null) foodType = "Uncategorized";
+
+        // 3. Fetch raw candidates
+        List<ProductResult> rawAlternates = searchUSDAAlternates(foodType, primaryResult);
+
+        // 4. Rank candidates and drop flagged items (Rank = Infinity)
+        List<AlternateRanker.RankedProduct> rankedAlternates = AlternateRanker.rankAndFilter(rawAlternates,superiorTerms);
+
+        // 5. Cap at top 5 ranked clean items
+        if (rankedAlternates.size() > 5) {
+            rankedAlternates = rankedAlternates.subList(0, 5);
+        }
+
+        // 6. Send to UI
+        final String finalCategory = foodType;
+        final List<AlternateRanker.RankedProduct> finalRanked = rankedAlternates;
+        runOnUiThread(() -> showResult(primaryResult, finalCategory, finalRanked));
+
+    } catch (Exception e) {
+        runOnUiThread(() -> {
+            statusText.setText("Couldn't retrieve product information.");
+            ingredientsText.setText("Please check your internet connection and try again.");
+        });
+    } finally {
+        runOnUiThread(() -> {
+            progress.setVisibility(ProgressBar.GONE);
+            searchButton.setEnabled(true);
+        });
+    }
+}).start();
+
+}
+
+
 
     /*
      * Open Food Facts' current API is v3, but full-text product search is not
@@ -330,6 +434,91 @@ private JSONObject performUsdaSearch(String query, String apiKey, boolean strict
     return null;
 }
 
+/**
+ * Queries USDA FoodData Central for alternate products matching the inferred food category.
+ * Returns up to 5 unique alternate ProductResult objects.
+ */
+private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductResult primaryResult) throws Exception {
+    List<ProductResult> alternates = new ArrayList<>();
+
+    // 1. Skip searching for alternatives if the searched product is ALREADY clean
+    // or if the category could not be extracted
+    if (!primaryResult.found 
+            || primaryResult.flagged.isEmpty() 
+            || foodCategory == null 
+            || "Uncategorized".equalsIgnoreCase(foodCategory)) {
+        return alternates;
+    }
+
+    String apiKey = BuildConfig.USDA_API_KEY;
+    String q = URLEncoder.encode(foodCategory, "UTF-8");
+
+    String url = "https://api.nal.usda.gov/fdc/v1/foods/search"
+            + "?api_key=" + apiKey
+            + "&query=" + q
+            + "&dataType=Branded"
+            + "&pageSize=30"; // Fetch slightly more to account for duplicates/skips
+
+    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+    c.setConnectTimeout(10000);
+    c.setReadTimeout(15000);
+    c.setRequestMethod("GET");
+    c.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
+
+    int code = c.getResponseCode();
+    InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+    String body = readAll(is);
+    c.disconnect();
+
+    if (code < 200 || code >= 300) return alternates;
+
+    JSONObject root = new JSONObject(body);
+    JSONArray foods = root.optJSONArray("foods");
+    if (foods == null) return alternates;
+
+    // Set to keep track of seen products to prevent duplicates
+    Set<String> seenProductKeys = new HashSet<>();
+
+    // Add primary searched product to seen list so it won't appear as an alternate
+    String primaryKey = normalize(primaryResult.name) + "|" + normalize(primaryResult.brand);
+    seenProductKeys.add(primaryKey);
+
+    for (int i = 0; i < foods.length(); i++) {
+        JSONObject f = foods.getJSONObject(i);
+        String name = f.optString("description", "");
+        String brand = f.optString("brandOwner", "");
+        String ingredients = f.optString("ingredients", "");
+
+        // Skip items without ingredient lists
+        if (TextUtils.isEmpty(ingredients.trim())) {
+            continue;
+        }
+
+        // Generate a composite key for deduplication
+        String productKey = normalize(name) + "|" + normalize(brand);
+
+        // Deduplication check: skip if we've already processed this product/brand combo
+        if (seenProductKeys.contains(productKey)) {
+            continue;
+        }
+
+        // Mark as seen
+        seenProductKeys.add(productKey);
+
+        Set<String> flagged = findFlaggedIngredients(ingredients);
+        
+        ProductResult altResult = new ProductResult(true, name, brand, ingredients, flagged);
+        alternates.add(altResult);
+
+        // Stop once 5 unique alternates are collected
+        if (alternates.size() == 5) {
+            break;
+        }
+    }
+
+    return alternates;
+}
+
     private Set<String> findFlaggedIngredients(String ingredients) {
         String n = normalize(ingredients);
         Set<String> found = new TreeSet<>();
@@ -348,7 +537,7 @@ private JSONObject performUsdaSearch(String query, String apiKey, boolean strict
         return b.toString();
     }
 
-    private void showResult(ProductResult result) {
+    private void showResult2(ProductResult result) {
         resultCard.setVisibility(LinearLayout.VISIBLE);
 
         if (!result.found) {
@@ -393,8 +582,242 @@ private JSONObject performUsdaSearch(String query, String apiKey, boolean strict
 
         ingredientsText.setText(result.ingredients);
     }
+private void showResult(ProductResult result, String foodType, List<AlternateRanker.RankedProduct> alternates) {
+    resultCard.setVisibility(LinearLayout.VISIBLE);
 
-    private static class ProductResult {
+    if (!result.found) {
+        statusText.setText("No matching product with ingredient data was found.");
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("? PRODUCT NOT FOUND");
+        verdictText.setTextColor(Color.rgb(97, 97, 97));
+        flaggedText.setVisibility(TextView.GONE);
+        ingredientsText.setText("We cannot determine whether the ingredients are clean or dirty without a verified ingredient list.");
+        return;
+    }
+
+    // 1. Header
+    String header = result.name;
+    if (!TextUtils.isEmpty(result.brand)) header += " • " + result.brand;
+    header += " | Type: " + foodType;
+    statusText.setText(header);
+
+    // 2. Verdict Styling
+    if (TextUtils.isEmpty(result.ingredients.trim())) {
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("? INGREDIENTS UNAVAILABLE");
+        verdictText.setTextColor(Color.rgb(97, 97, 97));
+        flaggedText.setVisibility(TextView.GONE);
+        ingredientsText.setText("This product was found, but no ingredient list is available.");
+        return;
+    }
+
+    if (result.flagged.isEmpty()) {
+        resultCard.setBackgroundResource(R.drawable.verdict_clean);
+        verdictText.setText("✓ CLEAN INGREDIENTS");
+        verdictText.setTextColor(Color.rgb(27, 94, 32));
+        flaggedText.setVisibility(TextView.GONE);
+    } else {
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("⚠ DIRTY INGREDIENTS");
+        verdictText.setTextColor(Color.rgb(198, 40, 40));
+        flaggedText.setVisibility(TextView.VISIBLE);
+        StringBuilder b = new StringBuilder();
+        for (String f : result.flagged) b.append("• ").append(f).append('\n');
+        flaggedText.setText(b.toString().trim());
+    }
+
+    // 3. Build Clickable Text Body
+    SpannableStringBuilder spannableBuilder = new SpannableStringBuilder();
+    spannableBuilder.append("PRIMARY INGREDIENTS:\n").append(result.ingredients).append("\n\n");
+
+    if (!alternates.isEmpty()) {
+        spannableBuilder.append("─── CLEAN ALTERNATES FOR ")
+                        .append(foodType.toUpperCase(Locale.US))
+                        .append(" ───\n\n");
+
+        for (int i = 0; i < alternates.size(); i++) {
+            AlternateRanker.RankedProduct item = alternates.get(i);
+            ProductResult alt = item.product;
+
+            int startPos = spannableBuilder.length();
+
+            // Construct text for this single item
+            String itemHeader = item.getStarRating() + " " + alt.name;
+            if (!TextUtils.isEmpty(alt.brand)) {
+                itemHeader += " (" + alt.brand + ")";
+            }
+            itemHeader += "\n   ✓ Clean • " + item.ingredientCount + " ingredients";
+            if (item.superiorCount > 0) {
+                itemHeader += " • " + item.superiorCount + " superior badge(s)";
+            }
+            itemHeader += "\n\n";
+
+            spannableBuilder.append(itemHeader);
+            int endPos = spannableBuilder.length();
+
+            // Attach ClickableSpan specifically to THIS alternate's text block
+            final ProductResult currentAlt = alt;
+            spannableBuilder.setSpan(new ClickableSpan() {
+                @Override
+                public void onClick(@NonNull View widget) {
+                    showAlternateIngredientsDialog(currentAlt);
+                }
+
+                @Override
+                public void updateDrawState(@NonNull TextPaint ds) {
+                    super.updateDrawState(ds);
+                    ds.setUnderlineText(false); // Remove default link underline
+                    ds.setColor(Color.parseColor("#1B5E20")); // Dark green text for alternates
+                }
+            }, startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+    }
+
+    // Set the built spannable text to the TextView
+    ingredientsText.setText(spannableBuilder);
+}
+
+/**
+ * Directly displays a dialog showing ingredients for ONLY the tapped alternate product.
+ */
+private void showAlternateIngredientsDialog(ProductResult altProduct) {
+    String title = altProduct.name;
+    if (!TextUtils.isEmpty(altProduct.brand)) {
+        title += " (" + altProduct.brand + ")";
+    }
+
+    new androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage("INGREDIENTS:\n\n" + altProduct.ingredients)
+            .setPositiveButton("Close", null)
+            .show();
+}
+
+
+
+private void showResult3(ProductResult result, String foodType, List<ProductResult> alternates) {
+    resultCard.setVisibility(LinearLayout.VISIBLE);
+
+    if (!result.found) {
+        statusText.setText("No matching product with ingredient data was found.");
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("? PRODUCT NOT FOUND");
+        verdictText.setTextColor(Color.rgb(97, 97, 97));
+        flaggedText.setVisibility(TextView.GONE);
+        ingredientsText.setText("We cannot determine whether the ingredients are clean or dirty without a verified ingredient list.");
+        return;
+    }
+
+    // 1. Set Header
+    String header = result.name;
+    if (!TextUtils.isEmpty(result.brand)) header += " • " + result.brand;
+    header += " | Type: " + foodType;
+    if (result.matchQuality != null) {
+        header += " | match: " + result.matchQuality.toString();
+    }
+    statusText.setText(header);
+
+    // 2. Set Main Product Verdict
+    if (TextUtils.isEmpty(result.ingredients.trim())) {
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("? INGREDIENTS UNAVAILABLE");
+        verdictText.setTextColor(Color.rgb(97, 97, 97));
+        flaggedText.setVisibility(TextView.GONE);
+        ingredientsText.setText("This product was found, but no ingredient list is available.");
+        return;
+    }
+
+    if (result.flagged.isEmpty()) {
+        resultCard.setBackgroundResource(R.drawable.verdict_clean);
+        verdictText.setText("✓ CLEAN INGREDIENTS");
+        verdictText.setTextColor(Color.rgb(27, 94, 32));
+        flaggedText.setVisibility(TextView.GONE);
+    } else {
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("⚠ DIRTY INGREDIENTS");
+        verdictText.setTextColor(Color.rgb(198, 40, 40));
+        flaggedText.setVisibility(TextView.VISIBLE);
+        StringBuilder b = new StringBuilder();
+        for (String f : result.flagged) b.append("• ").append(f).append('\n');
+        flaggedText.setText(b.toString().trim());
+    }
+
+    // 3. Append Main Ingredients + 5 Extracted Alternates
+    StringBuilder mainBody = new StringBuilder();
+    mainBody.append("Ingredients: ").append(result.ingredients).append("\n\n");
+
+    if (!alternates.isEmpty()) {
+        mainBody.append("─── ").append(alternates.size()).append(" ALTERNATES FOR ").append(foodType.toUpperCase(Locale.US)).append(" ───\n\n");
+        for (int i = 0; i < alternates.size(); i++) {
+            ProductResult alt = alternates.get(i);
+            String statusSymbol = alt.flagged.isEmpty() ? "✓ CLEAN" : "⚠ FLAGGED (" + alt.flagged.size() + ")";
+            
+            mainBody.append(i + 1).append(". ").append(alt.name);
+            if (!TextUtils.isEmpty(alt.brand)) mainBody.append(" (").append(alt.brand).append(")");
+            mainBody.append("\n   Status: ").append(statusSymbol).append("\n\n");
+        }
+    }
+
+    ingredientsText.setText(mainBody.toString().trim());
+}
+
+private void showResult3(ProductResult result) {
+    resultCard.setVisibility(LinearLayout.VISIBLE);
+
+    if (!result.found) {
+        statusText.setText("No matching product with ingredient data was found.");
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("? PRODUCT NOT FOUND");
+        verdictText.setTextColor(Color.rgb(97, 97, 97));
+        flaggedText.setVisibility(TextView.GONE);
+        ingredientsText.setText(
+                "We cannot determine whether the ingredients are clean or dirty without a verified ingredient list.");
+        return;
+    }
+
+    // 1. Run Rule-Based Classifier
+    RuleBasedFoodClassifier classifier = new RuleBasedFoodClassifier();
+    String foodType = classifier.classify(result.name);
+    if (foodType == null) {
+        foodType = "Uncategorized";
+    }
+
+    // 2. Append Extracted Food Type to the Header
+    String header = result.name;
+    if (!TextUtils.isEmpty(result.brand)) header += " • " + result.brand;
+    header += " | Type: " + foodType;
+    header += " | match: " + result.matchQuality.toString();
+    statusText.setText(header);
+
+    if (TextUtils.isEmpty(result.ingredients.trim())) {
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("? INGREDIENTS UNAVAILABLE");
+        verdictText.setTextColor(Color.rgb(97, 97, 97));
+        flaggedText.setVisibility(TextView.GONE);
+        ingredientsText.setText("This product was found, but no ingredient list is available.");
+        return;
+    }
+
+    if (result.flagged.isEmpty()) {
+        resultCard.setBackgroundResource(R.drawable.verdict_clean);
+        verdictText.setText("✓ CLEAN INGREDIENTS");
+        verdictText.setTextColor(Color.rgb(27, 94, 32));
+        flaggedText.setVisibility(TextView.GONE);
+    } else {
+        resultCard.setBackgroundResource(R.drawable.verdict_dirty);
+        verdictText.setText("⚠ DIRTY INGREDIENTS");
+        verdictText.setTextColor(Color.rgb(198, 40, 40));
+        flaggedText.setVisibility(TextView.VISIBLE);
+        StringBuilder b = new StringBuilder();
+        for (String f : result.flagged) b.append("• ").append(f).append('\n');
+        flaggedText.setText(b.toString().trim());
+    }
+
+    ingredientsText.setText(result.ingredients);
+}
+
+
+    public static class ProductResult {
         boolean found;
         String name, brand, ingredients;
         Set<String> flagged;
