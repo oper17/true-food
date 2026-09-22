@@ -20,6 +20,11 @@ import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import android.util.Log;
+import java.nio.charset.StandardCharsets;
+import java.util.Iterator;
+
+
 import java.util.Map;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -48,6 +53,11 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.TreeSet;
 
+import android.view.ViewGroup;
+import android.widget.CheckBox;
+import java.util.Arrays;
+
+
 public class MainActivity extends AppCompatActivity {
 
     // Member Variable Declarations
@@ -65,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView toggleIngredientsButton;
     private TextView productTitleText;
     private TextView matchNoticeText;
+	private com.google.android.flexbox.FlexboxLayout categoryCheckboxContainer;
 
     private boolean isIngredientsExpanded = false;
 
@@ -105,7 +116,7 @@ protected void onCreate(Bundle savedInstanceState) {
     if (scanBarcodeButton != null) {
         scanBarcodeButton.setOnClickListener(v -> openBarcodeScanner());
     }
-
+setupCategoryFilterPanel();
     // 5. Attach AutoComplete Manager
     SuggestionProvider usdaProvider = new UsdaSuggestionProvider();
     FoodAutoCompleteManager autoCompleteManager = new FoodAutoCompleteManager(this, usdaProvider);
@@ -152,6 +163,7 @@ protected void onCreate(Bundle savedInstanceState) {
         alternatesTitle = findViewById(R.id.alternatesTitle);
         alternatesText = findViewById(R.id.alternatesText);
         toggleIngredientsButton = findViewById(R.id.toggleIngredientsButton);
+		categoryCheckboxContainer = findViewById(R.id.categoryCheckboxContainer);
     }
 
     private void loadSuperiorTerms() {
@@ -683,6 +695,57 @@ private void populateFlaggedChips(LinearLayout chipContainer, FlaggedIngredientM
     }
 }
 
+private void setupCategoryFilterPanel() {
+    if (categoryCheckboxContainer == null) return;
+    categoryCheckboxContainer.removeAllViews();
+
+    List<String> categories = new ArrayList<>();
+
+    // Read categories dynamically from JSON asset
+    try (InputStream is = getAssets().open("flagged_ingredients.json");
+         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
+        
+        StringBuilder jsonBuilder = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) {
+            jsonBuilder.append(line);
+        }
+
+        JSONObject rootJson = new JSONObject(jsonBuilder.toString());
+        Iterator<String> keys = rootJson.keys();
+        while (keys.hasNext()) {
+            categories.add(keys.next());
+        }
+    } catch (Exception e) {
+        Log.e("MainActivity", "Failed to load categories for checkboxes", e);
+    }
+
+    for (String category : categories) {
+        CheckBox checkBox = new CheckBox(this);
+        checkBox.setText(category);
+        checkBox.setTextSize(12f);
+
+        // Check preference manager (or SharedPreferences) for sticky state
+        boolean isEnabled = CategoryPreferenceManager.isCategoryEnabled(this, category);
+        checkBox.setChecked(isEnabled);
+
+        checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            CategoryPreferenceManager.setCategoryEnabled(MainActivity.this, category, isChecked);
+        });
+
+        com.google.android.flexbox.FlexboxLayout.LayoutParams params =
+                new com.google.android.flexbox.FlexboxLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT
+                );
+        params.setMargins(0, 0, 16, 4);
+        checkBox.setLayoutParams(params);
+
+        categoryCheckboxContainer.addView(checkBox);
+    }
+}
+
+
     public enum MatchQuality {
         EXACT,
         CLOSE_ENOUGH,
@@ -705,6 +768,8 @@ private void populateFlaggedChips(LinearLayout chipContainer, FlaggedIngredientM
         this.matchResult = matchResult;
         this.matchQuality = matchQuality;
 
+        // Reset and strictly populate only active matches
+        this.flagged.clear();
         if (matchResult != null && matchResult.hasMatches()) {
             for (List<String> items : matchResult.categoryMap.values()) {
                 this.flagged.addAll(items);
@@ -721,5 +786,6 @@ private void populateFlaggedChips(LinearLayout chipContainer, FlaggedIngredientM
         return new ProductResult(false, "", "", "", new FlaggedIngredientManager.MatchResult(), MatchQuality.NONE);
     }
 }
+
 
 }

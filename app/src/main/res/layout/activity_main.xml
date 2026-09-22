@@ -113,6 +113,33 @@
                 android:src="@android:drawable/ic_menu_camera"
                 app:tint="#374151" />
         </LinearLayout>
+		<LinearLayout
+    android:id="@+id/categoryFilterPanel"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:layout_marginTop="8dp"
+    android:layout_marginBottom="8dp"
+    android:padding="8dp"
+    android:background="#F3F4F6">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Filter Flagged Categories:"
+        android:textStyle="bold"
+        android:textSize="12sp"
+        android:textColor="#374151"
+        android:layout_marginBottom="4dp" />
+
+    <!-- Container for dynamic CheckBoxes -->
+    <com.google.android.flexbox.FlexboxLayout
+        android:id="@+id/categoryCheckboxContainer"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        app:flexWrap="wrap"
+        app:justifyContent="flex_start" />
+</LinearLayout>
 
         <!-- Primary Action Button -->
         <Button
