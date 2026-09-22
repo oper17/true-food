@@ -651,18 +651,70 @@ private void showFullIngredientsDialog(ProductResult product) {
 
 
     private void showAlternateIngredientsDialog(ProductResult altProduct) {
-        String title = altProduct.name;
-        if (!TextUtils.isEmpty(altProduct.brand)) {
-            title += " (" + altProduct.brand + ")";
-        }
+    if (altProduct == null) return;
 
-        new AlertDialog.Builder(this)
-                .setTitle(title)
-                .setMessage("INGREDIENTS:\n\n" + altProduct.ingredients)
-                .setPositiveButton("Close", null)
-                .setNeutralButton("BUY!", (dialog, which) -> openWalmartSearch(altProduct.name))
-                .show();
+    String title = altProduct.name;
+    if (!TextUtils.isEmpty(altProduct.brand)) {
+        title += " (" + altProduct.brand + ")";
     }
+
+    SpannableStringBuilder dialogContent = new SpannableStringBuilder();
+
+    // 1. Add Superior Badge Explanatory Note
+    String explanation = "Superior badges are provided when the item has one or more superior ingredients\n\n";
+    int expStart = dialogContent.length();
+    dialogContent.append(explanation);
+    
+    dialogContent.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.ITALIC), 
+            expStart, dialogContent.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    dialogContent.setSpan(new android.text.style.ForegroundColorSpan(Color.parseColor("#4B5563")), 
+            expStart, dialogContent.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+    // 2. Ingredients Header
+    int headerStart = dialogContent.length();
+    dialogContent.append("INGREDIENTS:\n\n");
+    dialogContent.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 
+            headerStart, dialogContent.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+    // 3. Format and Highlight Superior Ingredients
+    String rawIngredients = TextUtils.isEmpty(altProduct.ingredients) 
+            ? "No ingredient list available." 
+            : altProduct.ingredients;
+
+    String[] tokens = rawIngredients.split(",");
+    for (int i = 0; i < tokens.length; i++) {
+        String token = tokens[i];
+        String trimmedToken = token.trim();
+
+        if (i > 0) dialogContent.append(", ");
+        
+        int tokenStart = dialogContent.length();
+        dialogContent.append(trimmedToken);
+        int tokenEnd = dialogContent.length();
+
+        // Highlight in green bold if the ingredient is superior
+       if (FlaggedIngredientManager.isSuperiorIngredient(this, trimmedToken)) {
+            dialogContent.setSpan(new android.text.style.ForegroundColorSpan(Color.parseColor("#15803D")), 
+                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            dialogContent.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 
+                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+    }
+
+    // Build TextView to support Spannable formatting
+    TextView messageView = new TextView(this);
+    messageView.setText(dialogContent);
+    messageView.setTextSize(15f);
+    messageView.setPadding(48, 32, 48, 16);
+    messageView.setLineSpacing(1.2f, 1.1f);
+
+    new AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(messageView)
+            .setPositiveButton("Close", null)
+          .setNeutralButton("BUY!", (dialog, which) -> openWalmartSearch(altProduct.name))  
+            .show();
+}
 
     private void openBarcodeScanner() {
         Intent intent = new Intent(this, BarcodeScannerActivity.class);
