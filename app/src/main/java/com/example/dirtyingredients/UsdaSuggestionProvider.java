@@ -1,5 +1,8 @@
 package com.example.dirtyingredients;
 
+import android.content.Context;
+import android.util.Log;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -14,7 +17,13 @@ import java.util.Scanner;
 
 public class UsdaSuggestionProvider implements SuggestionProvider {
 
+    private static final String TAG = "UsdaSuggestionProvider";
     private static final String API_KEY = BuildConfig.USDA_API_KEY;
+    private final Context context;
+
+    public UsdaSuggestionProvider(Context context) {
+        this.context = context;
+    }
 
     @Override
     public List<String> fetchSuggestions(String query) throws Exception {
@@ -24,46 +33,76 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
             return suggestions;
         }
 
-        URL url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search?api_key=" + API_KEY);
-        HttpURLConnection c = (HttpURLConnection) url.openConnection();
-        c.setConnectTimeout(2000);
-        c.setReadTimeout(2000);
-        c.setRequestMethod("POST");
-        c.setRequestProperty("Content-Type", "application/json");
-        c.setDoOutput(true);
+        String trimmedQuery = query.trim();
+        String cacheKey = "usda_suggestions_" + trimmedQuery.toLowerCase();
 
-        JSONObject jsonPayload = new JSONObject();
-        jsonPayload.put("query", query.trim());
-        jsonPayload.put("dataType", new JSONArray(List.of("Branded")));
-        jsonPayload.put("pageSize", 8);
-        jsonPayload.put("fields", new JSONArray(List.of("description", "brandOwner")));
-
-        try (OutputStream os = c.getOutputStream()) {
-            byte[] inputBytes = jsonPayload.toString().getBytes(StandardCharsets.UTF_8);
-            os.write(inputBytes, 0, inputBytes.length);
+        // 1. Check local disk cache (7-day TTL)
+        String body = null;
+        if (context != null) {
+            body = UsdaResponseCache.get(context, cacheKey);
         }
 
-        if (c.getResponseCode() == 200) {
-            try (InputStream is = c.getInputStream()) {
-                String body = readAll(is);
-                JSONObject root = new JSONObject(body);
-                JSONArray foods = root.optJSONArray("foods");
+        // 2. Fetch from network if cache missed or expired
+        if (body == null) {
+            URL url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search?api_key=" + API_KEY);
+            HttpURLConnection c = (HttpURLConnection) url.openConnection();
+            c.setConnectTimeout(2000);
+            c.setReadTimeout(2000);
+            c.setRequestMethod("POST");
+            c.setRequestProperty("Content-Type", "application/json");
+            c.setDoOutput(true);
 
-                if (foods != null) {
-                    for (int i = 0; i < foods.length(); i++) {
-                        JSONObject item = foods.getJSONObject(i);
-                        String description = item.optString("description", "");
-                        String brand = item.optString("brandOwner", "");
+            JSONObject jsonPayload = new JSONObject();
+            jsonPayload.put("query", trimmedQuery);
+            
+            JSONArray dataTypes = new JSONArray();
+            dataTypes.put("Branded");
+            jsonPayload.put("dataType", dataTypes);
+            jsonPayload.put("pageSize", 8);
 
-                        String label = brand.isEmpty() ? description : description + " (" + brand + ")";
-                        if (!suggestions.contains(label)) {
-                            suggestions.add(label);
-                        }
+            JSONArray fields = new JSONArray();
+            fields.put("description");
+            fields.put("brandOwner");
+            jsonPayload.put("fields", fields);
+
+            try (OutputStream os = c.getOutputStream()) {
+                byte[] inputBytes = jsonPayload.toString().getBytes(StandardCharsets.UTF_8);
+                os.write(inputBytes, 0, inputBytes.length);
+            }
+
+            if (c.getResponseCode() == 200) {
+                try (InputStream is = c.getInputStream()) {
+                    body = readAll(is);
+                    // Cache the successful network response
+                    if (context != null && body != null && !body.isEmpty()) {
+                        UsdaResponseCache.put(context, cacheKey, body);
+                    }
+                }
+            } else {
+                Log.e(TAG, "USDA Suggestion request failed with status: " + c.getResponseCode());
+            }
+            c.disconnect();
+        }
+
+        // 3. Parse JSON response (from either cache or network)
+        if (body != null && !body.isEmpty()) {
+            JSONObject root = new JSONObject(body);
+            JSONArray foods = root.optJSONArray("foods");
+
+            if (foods != null) {
+                for (int i = 0; i < foods.length(); i++) {
+                    JSONObject item = foods.getJSONObject(i);
+                    String description = item.optString("description", "");
+                    String brand = item.optString("brandOwner", "");
+
+                    String label = brand.isEmpty() ? description : description + " (" + brand + ")";
+                    if (!suggestions.contains(label)) {
+                        suggestions.add(label);
                     }
                 }
             }
         }
-        c.disconnect();
+
         return suggestions;
     }
 

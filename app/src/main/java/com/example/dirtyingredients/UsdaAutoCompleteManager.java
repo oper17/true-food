@@ -5,6 +5,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
+import android.util.Log;
 import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
@@ -26,6 +27,7 @@ import java.util.concurrent.Executors;
 
 public class UsdaAutoCompleteManager {
 
+    private static final String TAG = "UsdaAutoCompleteManager";
     private static final String API_KEY = BuildConfig.USDA_API_KEY;
     private final Context context;
     private final Handler handler = new Handler(Looper.getMainLooper());
@@ -33,7 +35,7 @@ public class UsdaAutoCompleteManager {
 
     private ArrayAdapter<String> adapter;
     private Runnable searchRunnable;
-    
+
     // Tracks current selection state and exact selected string
     private String selectedText = "";
     private boolean isSelectingFromList = false;
@@ -124,7 +126,7 @@ public class UsdaAutoCompleteManager {
                 // If user edits text so it no longer equals the selection, reset selection state
                 if (!currentText.equals(selectedText)) {
                     isSelectingFromList = false;
-                    selectedText = ""; 
+                    selectedText = "";
                 }
 
                 // Skip auto-complete API call if user selected an item or text equals previous selection
@@ -144,7 +146,7 @@ public class UsdaAutoCompleteManager {
                         List<String> suggestions = fetchUsdaSuggestions(currentText);
                         handler.post(() -> updateSuggestionsList(suggestions, autoCompleteTextView));
                     } catch (Exception e) {
-                        e.printStackTrace();
+                        Log.e(TAG, "Error fetching suggestions", e);
                     }
                 });
 
@@ -177,31 +179,58 @@ public class UsdaAutoCompleteManager {
 
     private List<String> fetchUsdaSuggestions(String input) throws Exception {
         List<String> suggestions = new ArrayList<>();
+        String cacheKey = "usda_autocomplete_" + input.toLowerCase().trim();
 
-        URL url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search?api_key=" + API_KEY);
-        HttpURLConnection c = (HttpURLConnection) url.openConnection();
-        c.setConnectTimeout(2000);
-        c.setReadTimeout(2000);
-        c.setRequestMethod("POST");
-        c.setRequestProperty("Content-Type", "application/json");
-        c.setDoOutput(true);
+        // 1. Check local disk cache first (7-day TTL)
+        String body = UsdaResponseCache.get(context, cacheKey);
 
-        JSONObject jsonPayload = new JSONObject();
-        jsonPayload.put("query", input);
-        jsonPayload.put("dataType", new JSONArray(List.of("Branded")));
-        jsonPayload.put("pageSize", 8);
-        jsonPayload.put("fields", new JSONArray(List.of("description", "brandOwner")));
+        // 2. Network fetch if cache missed or expired
+        if (body == null) {
+            URL url = new URL("https://api.nal.usda.gov/fdc/v1/foods/search?api_key=" + API_KEY);
+            HttpURLConnection c = (HttpURLConnection) url.openConnection();
+            try {
+                c.setConnectTimeout(2000);
+                c.setReadTimeout(2000);
+                c.setRequestMethod("POST");
+                c.setRequestProperty("Content-Type", "application/json");
+                c.setDoOutput(true);
 
-        try (OutputStream os = c.getOutputStream()) {
-            byte[] inputBytes = jsonPayload.toString().getBytes(StandardCharsets.UTF_8);
-            os.write(inputBytes, 0, inputBytes.length);
+                JSONObject jsonPayload = new JSONObject();
+                jsonPayload.put("query", input);
+
+                JSONArray dataTypes = new JSONArray();
+                dataTypes.put("Branded");
+                jsonPayload.put("dataType", dataTypes);
+                jsonPayload.put("pageSize", 8);
+
+                JSONArray fields = new JSONArray();
+                fields.put("description");
+                fields.put("brandOwner");
+                jsonPayload.put("fields", fields);
+
+                try (OutputStream os = c.getOutputStream()) {
+                    byte[] inputBytes = jsonPayload.toString().getBytes(StandardCharsets.UTF_8);
+                    os.write(inputBytes, 0, inputBytes.length);
+                }
+
+                if (c.getResponseCode() == 200) {
+                    try (InputStream is = c.getInputStream()) {
+                        body = readAll(is);
+                    }
+                    // Save response to cache
+                    if (body != null && !body.isEmpty()) {
+                        UsdaResponseCache.put(context, cacheKey, body);
+                    }
+                } else {
+                    Log.e(TAG, "USDA AutoComplete request failed with status: " + c.getResponseCode());
+                }
+            } finally {
+                c.disconnect();
+            }
         }
 
-        if (c.getResponseCode() == 200) {
-            InputStream is = c.getInputStream();
-            String body = readAll(is);
-            c.disconnect();
-
+        // 3. Parse JSON response (from either cache or network)
+        if (body != null && !body.isEmpty()) {
             JSONObject root = new JSONObject(body);
             JSONArray foods = root.optJSONArray("foods");
 
@@ -217,8 +246,6 @@ public class UsdaAutoCompleteManager {
                     }
                 }
             }
-        } else {
-            c.disconnect();
         }
 
         return suggestions;

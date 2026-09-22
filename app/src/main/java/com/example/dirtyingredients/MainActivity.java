@@ -118,7 +118,7 @@ protected void onCreate(Bundle savedInstanceState) {
     }
 setupCategoryFilterPanel();
     // 5. Attach AutoComplete Manager
-    SuggestionProvider usdaProvider = new UsdaSuggestionProvider();
+    SuggestionProvider usdaProvider = new UsdaSuggestionProvider(this);
     FoodAutoCompleteManager autoCompleteManager = new FoodAutoCompleteManager(this, usdaProvider);
     autoCompleteManager.attachToEditText(searchBox);
 
@@ -242,27 +242,50 @@ setupCategoryFilterPanel();
     }
 
     private ProductResult searchUSDA3(String productName) throws Exception {
-    String apiKey = BuildConfig.USDA_API_KEY;
-    String q = URLEncoder.encode(productName, "UTF-8");
+    String cacheKey = "usda_search3_" + productName.toLowerCase().trim();
 
-    String url = "https://api.nal.usda.gov/fdc/v1/foods/search"
-            + "?api_key=" + apiKey
-            + "&query=" + q
-            + "&dataType=Branded"
-            + "&pageSize=10";
+    // 1. Check local disk cache (7-day TTL)
+    String body = UsdaResponseCache.get(this, cacheKey);
 
-    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-    c.setConnectTimeout(10000);
-    c.setReadTimeout(15000);
-    c.setRequestMethod("GET");
-    c.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
+    // 2. Fetch from network if cache missed or expired
+    if (body == null) {
+        String apiKey = BuildConfig.USDA_API_KEY;
+        String q = URLEncoder.encode(productName, "UTF-8");
 
-    int code = c.getResponseCode();
-    InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
-    String body = readAll(is);
-    c.disconnect();
+        String url = "https://api.nal.usda.gov/fdc/v1/foods/search"
+                + "?api_key=" + apiKey
+                + "&query=" + q
+                + "&dataType=Branded"
+                + "&pageSize=10";
 
-    if (code < 200 || code >= 300) throw new IOException("HTTP " + code);
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
+            c.setRequestMethod("GET");
+            c.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
+
+            int code = c.getResponseCode();
+            try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
+                body = readAll(is);
+            }
+
+            if (code < 200 || code >= 300) {
+                throw new IOException("HTTP " + code);
+            }
+
+            // Save valid network response to cache
+            if (!TextUtils.isEmpty(body)) {
+                UsdaResponseCache.put(this, cacheKey, body);
+            }
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    if (TextUtils.isEmpty(body)) {
+        return ProductResult.notFound();
+    }
 
     JSONObject root = new JSONObject(body);
     JSONArray foods = root.optJSONArray("foods");
@@ -300,27 +323,50 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         return alternates;
     }
 
-    String apiKey = BuildConfig.USDA_API_KEY;
-    String q = URLEncoder.encode(foodCategory, "UTF-8");
+    String cacheKey = "usda_alternates_" + foodCategory.toLowerCase().trim();
 
-    String url = "https://api.nal.usda.gov/fdc/v1/foods/search"
-            + "?api_key=" + apiKey
-            + "&query=" + q
-            + "&dataType=Branded"
-            + "&pageSize=30";
+    // 1. Check local disk cache (7-day TTL)
+    String body = UsdaResponseCache.get(this, cacheKey);
 
-    HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-    c.setConnectTimeout(10000);
-    c.setReadTimeout(15000);
-    c.setRequestMethod("GET");
-    c.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
+    // 2. Fetch from network if cache missed or expired
+    if (body == null) {
+        String apiKey = BuildConfig.USDA_API_KEY;
+        String q = URLEncoder.encode(foodCategory, "UTF-8");
 
-    int code = c.getResponseCode();
-    InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
-    String body = readAll(is);
-    c.disconnect();
+        String url = "https://api.nal.usda.gov/fdc/v1/foods/search"
+                + "?api_key=" + apiKey
+                + "&query=" + q
+                + "&dataType=Branded"
+                + "&pageSize=30";
 
-    if (code < 200 || code >= 300) return alternates;
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
+            c.setRequestMethod("GET");
+            c.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
+
+            int code = c.getResponseCode();
+            try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
+                body = readAll(is);
+            }
+
+            if (code < 200 || code >= 300) {
+                return alternates;
+            }
+
+            // Save valid network response to cache
+            if (!TextUtils.isEmpty(body)) {
+                UsdaResponseCache.put(this, cacheKey, body);
+            }
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    if (TextUtils.isEmpty(body)) {
+        return alternates;
+    }
 
     JSONObject root = new JSONObject(body);
     JSONArray foods = root.optJSONArray("foods");
@@ -357,6 +403,7 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
 
     return alternates;
 }
+
 
 
     private void openWalmartSearch(String foodQuery) {
@@ -411,15 +458,12 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
     }
 
     Button walmartButton = findViewById(R.id.walmartButton);
-    if (walmartButton != null) {
-        walmartButton.setText("BUY!");
-        walmartButton.setOnClickListener(v -> openWalmartSearch(result.name));
-    }
+    View flaggedTitle = findViewById(R.id.flaggedTitle);
 
     // Bind or dynamic click listener for viewing ingredients inside the verdict card
     Button viewIngredientsButton = findViewById(R.id.viewIngredientsButton);
     if (viewIngredientsButton != null) {
-        if (!TextUtils.isEmpty(result.ingredients)) {
+        if (result != null && !TextUtils.isEmpty(result.ingredients)) {
             viewIngredientsButton.setVisibility(View.VISIBLE);
             viewIngredientsButton.setOnClickListener(v -> showFullIngredientsDialog(result));
         } else {
@@ -427,17 +471,17 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         }
     }
 
-    View flaggedTitle = findViewById(R.id.flaggedTitle);
-
-    if (!result.found) {
+    // Handle case where product was not found
+    if (result == null || !result.found) {
         if (matchNoticeText != null) matchNoticeText.setVisibility(View.GONE);
         if (productTitleText != null) productTitleText.setText("No Matching Product");
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("? PRODUCT NOT FOUND");
         verdictText.setTextColor(colorMuted);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
-        flaggedText.setVisibility(View.GONE);
-        alternatesCard.setVisibility(View.GONE);
+        if (flaggedText != null) flaggedText.setVisibility(View.GONE);
+        if (walmartButton != null) walmartButton.setVisibility(View.GONE);
+        if (alternatesCard != null) alternatesCard.setVisibility(View.GONE);
         return;
     }
 
@@ -463,28 +507,44 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         }
     }
 
+    // Handle missing/empty ingredients
     if (TextUtils.isEmpty(result.ingredients.trim())) {
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("? INGREDIENTS UNAVAILABLE");
         verdictText.setTextColor(colorMuted);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
-        flaggedText.setVisibility(View.GONE);
-        alternatesCard.setVisibility(View.GONE);
+        if (flaggedText != null) flaggedText.setVisibility(View.GONE);
+        if (walmartButton != null) walmartButton.setVisibility(View.GONE);
+        if (alternatesCard != null) alternatesCard.setVisibility(View.GONE);
         return;
     }
 
-    if (result.flagged.isEmpty()) {
+    boolean isClean = result.flagged == null || result.flagged.isEmpty();
+
+    // 1. Walmart BUY Button Visibility
+    if (walmartButton != null) {
+        if (isClean) {
+            walmartButton.setVisibility(View.VISIBLE);
+            walmartButton.setText("BUY!");
+            walmartButton.setOnClickListener(v -> openWalmartSearch(result.name));
+        } else {
+            walmartButton.setVisibility(View.GONE);
+        }
+    }
+
+    // 2. Verdict Card Styling & Flagged List Output
+    if (isClean) {
         resultCard.setBackgroundResource(R.drawable.verdict_clean);
         verdictText.setText("✓ CLEAN INGREDIENTS");
         verdictText.setTextColor(colorClean);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
-        flaggedText.setVisibility(View.GONE);
+        if (flaggedText != null) flaggedText.setVisibility(View.GONE);
     } else {
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("⚠ DIRTY INGREDIENTS");
         verdictText.setTextColor(colorDirty);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.VISIBLE);
-        flaggedText.setVisibility(View.VISIBLE);
+        if (flaggedText != null) flaggedText.setVisibility(View.VISIBLE);
 
         // Styled Category Grouping Output
         if (result.matchResult != null && result.matchResult.hasMatches()) {
@@ -516,53 +576,65 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         }
     }
 
-    // Clean Alternates Section
-    if (!alternates.isEmpty()) {
-        alternatesCard.setVisibility(View.VISIBLE);
-        alternatesTitle.setText("Clean Alternates");
+    // 3. Clean Alternates Section
+    if (alternatesCard != null && alternatesTitle != null && alternatesText != null) {
+        if (alternates != null && !alternates.isEmpty()) {
+            alternatesCard.setVisibility(View.VISIBLE);
+            alternatesTitle.setText("Clean Alternates");
 
-        SpannableStringBuilder spannableBuilder = new SpannableStringBuilder();
+            SpannableStringBuilder spannableBuilder = new SpannableStringBuilder();
 
-        for (int i = 0; i < alternates.size(); i++) {
-            AlternateRanker.RankedProduct item = alternates.get(i);
-            ProductResult alt = item.product;
+            for (int i = 0; i < alternates.size(); i++) {
+                AlternateRanker.RankedProduct item = alternates.get(i);
+                ProductResult alt = item.product;
 
-            int startPos = spannableBuilder.length();
+                int startPos = spannableBuilder.length();
 
-            String itemHeader = item.getStarRating() + " " + alt.name;
-            if (!TextUtils.isEmpty(alt.brand)) {
-                itemHeader += " (" + alt.brand + ")";
-            }
-            itemHeader += "\n   ✓ Clean • " + item.ingredientCount + " ingredients";
-            if (item.superiorCount > 0) {
-                itemHeader += " • " + item.superiorCount + " superior badge(s)";
-            }
-            itemHeader += "\n\n";
-
-            spannableBuilder.append(itemHeader);
-            int endPos = spannableBuilder.length();
-
-            final ProductResult currentAlt = alt;
-            spannableBuilder.setSpan(new ClickableSpan() {
-                @Override
-                public void onClick(@NonNull View widget) {
-                    showAlternateIngredientsDialog(currentAlt);
+                String itemHeader = item.getStarRating() + " " + alt.name;
+                if (!TextUtils.isEmpty(alt.brand)) {
+                    itemHeader += " (" + alt.brand + ")";
                 }
-
-                @Override
-                public void updateDrawState(@NonNull TextPaint ds) {
-                    super.updateDrawState(ds);
-                    ds.setUnderlineText(false);
-                    ds.setColor(Color.parseColor("#166534"));
+                itemHeader += "\n   ✓ Clean • " + item.ingredientCount + " ingredients";
+                if (item.superiorCount > 0) {
+                    itemHeader += " • " + item.superiorCount + " superior badge(s)";
                 }
-            }, startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                itemHeader += "\n\n";
+
+                spannableBuilder.append(itemHeader);
+                int endPos = spannableBuilder.length();
+
+                final ProductResult currentAlt = alt;
+                spannableBuilder.setSpan(new ClickableSpan() {
+                    @Override
+                    public void onClick(@NonNull View widget) {
+                        showAlternateIngredientsDialog(currentAlt);
+                    }
+
+                    @Override
+                    public void updateDrawState(@NonNull TextPaint ds) {
+                        super.updateDrawState(ds);
+                        ds.setUnderlineText(false);
+                        ds.setColor(Color.parseColor("#166534"));
+                    }
+                }, startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+            alternatesText.setText(spannableBuilder);
+            alternatesText.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+        } else {
+            // Display explicit fallback message if product is dirty but no clean options were found
+            if (!isClean) {
+                alternatesCard.setVisibility(View.VISIBLE);
+                alternatesTitle.setText("Clean Alternates");
+                alternatesText.setText("No clean alternatives were found for this item in the database.");
+            } else {
+                // If the product itself is clean, hide the alternates card
+                alternatesCard.setVisibility(View.GONE);
+            }
         }
-
-        alternatesText.setText(spannableBuilder);
-    } else {
-        alternatesCard.setVisibility(View.GONE);
     }
 }
+
 
 private void showFullIngredientsDialog(ProductResult product) {
     String title = product.name;
