@@ -393,10 +393,26 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
     int colorDirty = Color.parseColor("#991B1B");
     int colorMuted = Color.parseColor("#4B5563");
 
+    // Hide the separate primary ingredients card entirely
+    if (ingredientsCard != null) {
+        ingredientsCard.setVisibility(View.GONE);
+    }
+
     Button walmartButton = findViewById(R.id.walmartButton);
     if (walmartButton != null) {
         walmartButton.setText("BUY!");
         walmartButton.setOnClickListener(v -> openWalmartSearch(result.name));
+    }
+
+    // Bind or dynamic click listener for viewing ingredients inside the verdict card
+    Button viewIngredientsButton = findViewById(R.id.viewIngredientsButton);
+    if (viewIngredientsButton != null) {
+        if (!TextUtils.isEmpty(result.ingredients)) {
+            viewIngredientsButton.setVisibility(View.VISIBLE);
+            viewIngredientsButton.setOnClickListener(v -> showFullIngredientsDialog(result));
+        } else {
+            viewIngredientsButton.setVisibility(View.GONE);
+        }
     }
 
     View flaggedTitle = findViewById(R.id.flaggedTitle);
@@ -409,7 +425,6 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         verdictText.setTextColor(colorMuted);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         flaggedText.setVisibility(View.GONE);
-        ingredientsCard.setVisibility(View.GONE);
         alternatesCard.setVisibility(View.GONE);
         return;
     }
@@ -442,7 +457,6 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         verdictText.setTextColor(colorMuted);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         flaggedText.setVisibility(View.GONE);
-        ingredientsCard.setVisibility(View.GONE);
         alternatesCard.setVisibility(View.GONE);
         return;
     }
@@ -460,51 +474,37 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.VISIBLE);
         flaggedText.setVisibility(View.VISIBLE);
 
-        // Render matches grouped by JSON category names
-        StringBuilder b = new StringBuilder();
+        // Styled Category Grouping Output
         if (result.matchResult != null && result.matchResult.hasMatches()) {
-            for (Map.Entry<String, List<String>> entry : result.matchResult.categoryMap.entrySet()) {
-                b.append("[").append(entry.getKey()).append("]\n");
+            SpannableStringBuilder builder = new SpannableStringBuilder();
+
+            for (java.util.Map.Entry<String, List<String>> entry : result.matchResult.categoryMap.entrySet()) {
+                int startCategory = builder.length();
+
+                builder.append("► ").append(entry.getKey().toUpperCase(Locale.US)).append("\n");
+                int endCategory = builder.length();
+
+                builder.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                        startCategory, endCategory, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                builder.setSpan(new android.text.style.ForegroundColorSpan(Color.parseColor("#7F1D1D")),
+                        startCategory, endCategory, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
                 for (String matchedIngredient : entry.getValue()) {
-                    b.append(" • ").append(matchedIngredient).append("\n");
+                    builder.append("   • ").append(matchedIngredient).append("\n");
                 }
-                b.append("\n");
+                builder.append("\n");
             }
+            flaggedText.setText(builder.toString().trim());
         } else {
-            for (String f : result.flagged) b.append("• ").append(f).append('\n');
+            StringBuilder b = new StringBuilder();
+            for (String f : result.flagged) {
+                b.append("• ").append(f).append("\n");
+            }
+            flaggedText.setText(b.toString().trim());
         }
-        flaggedText.setText(b.toString().trim());
     }
 
-    ingredientsCard.setVisibility(View.VISIBLE);
-    ingredientsText.setText(result.ingredients);
-
-    isIngredientsExpanded = false;
-    ingredientsText.setMaxLines(4);
-    ingredientsText.setEllipsize(TextUtils.TruncateAt.END);
-    toggleIngredientsButton.setText("Show More ▼");
-
-    ingredientsText.post(() -> {
-        if (ingredientsText.getLineCount() > 4) {
-            toggleIngredientsButton.setVisibility(View.VISIBLE);
-            toggleIngredientsButton.setOnClickListener(v -> {
-                if (isIngredientsExpanded) {
-                    ingredientsText.setMaxLines(4);
-                    ingredientsText.setEllipsize(TextUtils.TruncateAt.END);
-                    toggleIngredientsButton.setText("Show More ▼");
-                    isIngredientsExpanded = false;
-                } else {
-                    ingredientsText.setMaxLines(Integer.MAX_VALUE);
-                    ingredientsText.setEllipsize(null);
-                    toggleIngredientsButton.setText("Show Less ▲");
-                    isIngredientsExpanded = true;
-                }
-            });
-        } else {
-            toggleIngredientsButton.setVisibility(View.GONE);
-        }
-    });
-
+    // Clean Alternates Section
     if (!alternates.isEmpty()) {
         alternatesCard.setVisibility(View.VISIBLE);
         alternatesTitle.setText("Clean Alternates");
@@ -550,6 +550,19 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
     } else {
         alternatesCard.setVisibility(View.GONE);
     }
+}
+
+private void showFullIngredientsDialog(ProductResult product) {
+    String title = product.name;
+    if (!TextUtils.isEmpty(product.brand)) {
+        title += " (" + product.brand + ")";
+    }
+
+    new AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage("FULL INGREDIENTS:\n\n" + product.ingredients)
+            .setPositiveButton("Close", null)
+            .show();
 }
 
 
@@ -627,6 +640,48 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, ProductRes
             });
         }).start();
     }
+
+private void populateFlaggedChips(LinearLayout chipContainer, FlaggedIngredientManager.MatchResult matchResult) {
+    chipContainer.removeAllViews();
+    chipContainer.setOrientation(LinearLayout.VERTICAL);
+
+    if (matchResult == null || !matchResult.hasMatches()) return;
+
+    for (java.util.Map.Entry<String, List<String>> entry : matchResult.categoryMap.entrySet()) {
+        // Category Subheader
+        TextView categoryTitle = new TextView(this);
+        categoryTitle.setText(entry.getKey().toUpperCase(Locale.US));
+        categoryTitle.setTextSize(11f);
+        categoryTitle.setTypeface(null, android.graphics.Typeface.BOLD);
+        categoryTitle.setTextColor(Color.parseColor("#991B1B"));
+        categoryTitle.setPadding(0, 12, 0, 6);
+        chipContainer.addView(categoryTitle);
+
+        // Container for item pills/chips
+        LinearLayout chipRow = new LinearLayout(this);
+        chipRow.setOrientation(LinearLayout.HORIZONTAL);
+        chipRow.setPadding(0, 0, 0, 8);
+
+        for (String item : entry.getValue()) {
+            TextView chip = new TextView(this);
+            chip.setText(item);
+            chip.setTextSize(12f);
+            chip.setTextColor(Color.parseColor("#991B1B"));
+            chip.setBackgroundResource(R.drawable.chip_dirty_background); // Optional custom rounded shape
+            chip.setPadding(20, 10, 20, 10);
+
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+            );
+            params.setMargins(0, 0, 12, 8);
+            chip.setLayoutParams(params);
+
+            chipRow.addView(chip);
+        }
+        chipContainer.addView(chipRow);
+    }
+}
 
     public enum MatchQuality {
         EXACT,

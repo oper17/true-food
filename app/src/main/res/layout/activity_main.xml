@@ -208,6 +208,14 @@
                 android:textColor="#FFFFFF"
                 android:textSize="13sp"
                 android:textStyle="bold" />
+				<Button
+    android:id="@+id/viewIngredientsButton"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:text="Full Ingredients List"
+    android:textSize="13sp"
+    android:visibility="gone" />
+	
         </LinearLayout>
 
         <!-- PANEL 1: Primary Product Ingredients Card -->
