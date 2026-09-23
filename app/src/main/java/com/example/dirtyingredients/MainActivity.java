@@ -176,7 +176,7 @@ setupCategoryFilterPanel();
     NestedScrollView mainRoot = findViewById(R.id.mainRootLayout);
     View alternatesCardView = findViewById(R.id.alternatesCard);
     if (mainRoot != null && alternatesCardView != null && stickyResultsBar != null) {
-        mainRoot.setOnScrollChangeListener((v, scrollX, scrollY, oldX, oldY) -> {
+        mainRoot.setOnScrollChangeListener((NestedScrollView.OnScrollChangeListener) (v, scrollX, scrollY, oldX, oldY) -> {
             boolean show = alternatesCardView.getVisibility() == View.VISIBLE
                     && scrollY > alternatesCardView.getTop();
             stickyResultsBar.setVisibility(show ? View.VISIBLE : View.GONE);
