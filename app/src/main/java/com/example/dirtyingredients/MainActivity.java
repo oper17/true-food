@@ -49,6 +49,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -246,8 +247,10 @@ setupCategoryFilterPanel();
                 //    brand, treat it as a category search and always show clean choices.
                 boolean categoryIntent = isCategorySearch(product, primaryResult);
 
-                // 4. Fetch raw candidates
-                List<ProductResult> rawAlternates = searchUSDAAlternates(foodType, apiCategory, categoryIntent, primaryResult);
+                // 4. Fetch clean candidates (+ which flagged categories blocked the rest)
+                AlternateSearchResult altSearch =
+                        searchUSDAAlternates(foodType, apiCategory, categoryIntent, primaryResult);
+                List<ProductResult> rawAlternates = altSearch.alternates;
 
                 // 5. Rank candidates and drop flagged items (Rank = Infinity)
                 List<AlternateRanker.RankedProduct> rankedAlternates = AlternateRanker.rankAndFilter(rawAlternates, superiorTerms);
@@ -261,7 +264,9 @@ setupCategoryFilterPanel();
                 final String finalCategory = foodType;
                 final boolean finalCategoryIntent = categoryIntent;
                 final List<AlternateRanker.RankedProduct> finalRanked = rankedAlternates;
-                runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent, finalRanked));
+                final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
+                runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
+                        finalRanked, finalFlaggedCategories));
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -357,26 +362,101 @@ setupCategoryFilterPanel();
     return result;
 }
 
-private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean filterByCategory,
-                                                boolean categoryIntent, ProductResult primaryResult) throws Exception {
-    List<ProductResult> alternates = new ArrayList<>();
+/**
+ * Result of an alternates search: the clean candidates plus the flagged
+ * categories seen across scanned (dirty) candidates, so the UI can explain
+ * why a category search came up empty.
+ */
+static class AlternateSearchResult {
+    final List<ProductResult> alternates = new ArrayList<>();
+    final Set<String> flaggedCategories = new LinkedHashSet<>();
+}
+
+private AlternateSearchResult searchUSDAAlternates(String foodCategory, boolean filterByCategory,
+                                                   boolean categoryIntent, ProductResult primaryResult) throws Exception {
+    AlternateSearchResult result = new AlternateSearchResult();
 
     if (!primaryResult.found
             || primaryResult.ingredients == null
             || primaryResult.ingredients.trim().isEmpty()
             || foodCategory == null
             || "Uncategorized".equalsIgnoreCase(foodCategory)) {
-        return alternates;
+        return result;
     }
 
     // Clean alternates are normally fetched only for dirty products; a category
     // (unbranded) search always wants clean choices, even if the top hit is clean.
     if (!categoryIntent && primaryResult.flagged.isEmpty()) {
-        return alternates;
+        return result;
     }
 
+    Set<String> seenProductKeys = new HashSet<>();
+    String primaryKey = normalize(primaryResult.name) + "|" + normalize(primaryResult.brand);
+    seenProductKeys.add(primaryKey);
+
+    // Clean items can be rare in a category (e.g. almost every cookie contains
+    // wheat), so page through results until we have 5 clean candidates instead
+    // of judging the category by its first few hits.
+    final int pageSize = 50;
+    final int maxPages = 3;
+    int pageNumber = 1;
+    while (result.alternates.size() < 5 && pageNumber <= maxPages) {
+        JSONArray foods = fetchAlternatesPage(foodCategory, filterByCategory, pageNumber, pageSize);
+        if (foods == null || foods.length() == 0) {
+            break;
+        }
+        for (int i = 0; i < foods.length(); i++) {
+            JSONObject f = foods.getJSONObject(i);
+            String name = f.optString("description", "");
+            String brand = f.optString("brandOwner", f.optString("brandName", ""));
+            String ingredients = f.optString("ingredients", "");
+
+            if (TextUtils.isEmpty(ingredients.trim())) {
+                continue;
+            }
+
+            String productKey = normalize(name) + "|" + normalize(brand);
+            if (seenProductKeys.contains(productKey)) {
+                continue;
+            }
+            seenProductKeys.add(productKey);
+
+            FlaggedIngredientManager.MatchResult matchResult =
+                    FlaggedIngredientManager.analyzeIngredients(this, ingredients);
+            if (matchResult != null && matchResult.hasMatches()) {
+                // Remember which categories blocked this candidate so the UI can
+                // explain an empty result ("everything here contains gluten…").
+                result.flaggedCategories.addAll(matchResult.categoryMap.keySet());
+                continue;
+            }
+            ProductResult altResult = new ProductResult(true, name, brand, ingredients, matchResult);
+            altResult.foodCategory = f.optString("foodCategory", "");
+            altResult.gtinUpc = f.optString("gtinUpc", "");
+            altResult.brandName = f.optString("brandName", "");
+            altResult.brandOwner = f.optString("brandOwner", "");
+            result.alternates.add(altResult);
+
+            if (result.alternates.size() == 5) {
+                break;
+            }
+        }
+        if (foods.length() < pageSize) {
+            break; // last page
+        }
+        pageNumber++;
+    }
+
+    return result;
+}
+
+/**
+ * Fetches one page of branded products for the alternates/category lookup,
+ * using the 7-day disk cache when available.
+ */
+private JSONArray fetchAlternatesPage(String foodCategory, boolean filterByCategory,
+                                      int pageNumber, int pageSize) throws Exception {
     String cacheKey = "usda_alternates_" + (filterByCategory ? "cat_" : "")
-            + foodCategory.toLowerCase().trim();
+            + foodCategory.toLowerCase().trim() + "_p" + pageNumber;
 
     // 1. Check local disk cache (7-day TTL)
     String body = UsdaResponseCache.get(this, cacheKey);
@@ -398,7 +478,8 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
             JSONObject payload = new JSONObject();
             payload.put("query", foodCategory);
             payload.put("dataType", new JSONArray().put("Branded"));
-            payload.put("pageSize", 30);
+            payload.put("pageSize", pageSize);
+            payload.put("pageNumber", pageNumber);
             if (filterByCategory) {
                 // Narrow results using the USDA's own category vocabulary.
                 payload.put("foodCategory", foodCategory);
@@ -414,7 +495,7 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
             }
 
             if (code < 200 || code >= 300) {
-                return alternates;
+                return null;
             }
 
             // Save valid network response to cache
@@ -427,57 +508,12 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
     }
 
     if (TextUtils.isEmpty(body)) {
-        return alternates;
+        return null;
     }
 
     JSONObject root = new JSONObject(body);
-    JSONArray foods = root.optJSONArray("foods");
-    if (foods == null) return alternates;
-
-    Set<String> seenProductKeys = new HashSet<>();
-    String primaryKey = normalize(primaryResult.name) + "|" + normalize(primaryResult.brand);
-    seenProductKeys.add(primaryKey);
-
-    // Scan the whole page for clean candidates: the first few raw results are
-    // often all flagged (e.g. nearly every cookie contains wheat), so stopping
-    // after 5 raw candidates can miss clean items further down the list. Stop
-    // once we have collected 5 clean candidates instead.
-    for (int i = 0; i < foods.length(); i++) {
-        JSONObject f = foods.getJSONObject(i);
-        String name = f.optString("description", "");
-        String brand = f.optString("brandOwner", f.optString("brandName", ""));
-        String ingredients = f.optString("ingredients", "");
-
-        if (TextUtils.isEmpty(ingredients.trim())) {
-            continue;
-        }
-
-        String productKey = normalize(name) + "|" + normalize(brand);
-        if (seenProductKeys.contains(productKey)) {
-            continue;
-        }
-        seenProductKeys.add(productKey);
-
-        FlaggedIngredientManager.MatchResult matchResult = FlaggedIngredientManager.analyzeIngredients(this, ingredients);
-        if (matchResult != null && matchResult.hasMatches()) {
-            continue; // flagged -> not a clean choice
-        }
-        ProductResult altResult = new ProductResult(true, name, brand, ingredients, matchResult);
-        altResult.foodCategory = f.optString("foodCategory", "");
-        altResult.gtinUpc = f.optString("gtinUpc", "");
-        altResult.brandName = f.optString("brandName", "");
-        altResult.brandOwner = f.optString("brandOwner", "");
-        alternates.add(altResult);
-
-        if (alternates.size() == 5) {
-            break;
-        }
-    }
-
-    return alternates;
+    return root.optJSONArray("foods");
 }
-
-
 
     private void openWalmartSearch(String foodQuery) {
         String walmartUrl = WalmartUrlBuilder.buildSearchUrl(foodQuery);
@@ -510,13 +546,14 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
     }
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
-                            List<AlternateRanker.RankedProduct> alternates) {
+                            List<AlternateRanker.RankedProduct> alternates,
+                            Set<String> flaggedCategories) {
     // Unbranded category search (e.g. "cookies"): the top hit is just one random
     // branded product in the category, not what the user asked about, so hide the
     // primary verdict card and show only the clean-choices card.
     if (categoryIntent) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
-        showAlternatesCard(foodType, true, true, alternates);
+        showAlternatesCard(foodType, true, true, alternates, flaggedCategories);
         return;
     }
 
@@ -651,15 +688,18 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
     }
 
     // 3. Clean Alternates Section
-    showAlternatesCard(foodType, categoryIntent, isClean, alternates);
+    showAlternatesCard(foodType, categoryIntent, isClean, alternates, flaggedCategories);
 }
 
 /**
  * Binds the clean-alternates card. For category searches the heading names the
  * category ("Clean choices in <Category>"); otherwise it reads "Clean Alternates".
+ * When a category search finds nothing, the blocking flagged categories are listed
+ * so the user knows why (e.g. everything contains gluten).
  */
 private void showAlternatesCard(String foodType, boolean categoryIntent, boolean isClean,
-                                List<AlternateRanker.RankedProduct> alternates) {
+                                List<AlternateRanker.RankedProduct> alternates,
+                                Set<String> flaggedCategories) {
     if (alternatesCard != null && alternatesTitle != null && alternatesText != null) {
         String alternatesHeading = (categoryIntent && !TextUtils.isEmpty(foodType))
                 ? "Clean choices in " + foodType
@@ -713,9 +753,17 @@ private void showAlternatesCard(String foodType, boolean categoryIntent, boolean
             if (!isClean || categoryIntent) {
                 alternatesCard.setVisibility(View.VISIBLE);
                 alternatesTitle.setText(alternatesHeading);
-                alternatesText.setText(categoryIntent
-                        ? "No clean choices were found for this category in the database."
-                        : "No clean alternatives were found for this item in the database.");
+                if (categoryIntent && flaggedCategories != null && !flaggedCategories.isEmpty()
+                        && !TextUtils.isEmpty(foodType)) {
+                    alternatesText.setText("All items in " + foodType
+                            + " have the following flagged categories: "
+                            + TextUtils.join(", ", flaggedCategories)
+                            + ".\nConsider relaxing your search.");
+                } else {
+                    alternatesText.setText(categoryIntent
+                            ? "No clean choices were found for this category in the database."
+                            : "No clean alternatives were found for this item in the database.");
+                }
             } else {
                 // If the product itself is clean, hide the alternates card
                 alternatesCard.setVisibility(View.GONE);

@@ -148,7 +148,7 @@
             android:layout_height="52dp"
             android:layout_marginTop="12dp"
             android:background="@drawable/bg_button_primary"
-            android:text="CHECK INGREDIENTS"
+            android:text="SEARCH"
             android:textColor="#FFFFFF"
             android:textSize="14sp"
             android:textStyle="bold" />
