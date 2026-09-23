@@ -44,7 +44,7 @@ public class AlternatesCardController {
 
     /** Called when the user taps BUY! in an alternate's ingredient dialog. */
     public interface BuyListener {
-        void onBuy(String productName);
+        void onBuy(ProductResult product);
     }
 
     private final AppCompatActivity activity;
@@ -384,7 +384,7 @@ public class AlternatesCardController {
                 .setTitle(titleText)
                 .setView(messageView)
                 .setPositiveButton("Close", null)
-                .setNeutralButton("BUY!", (dialog, which) -> buyListener.onBuy(altProduct.name))
+                .setNeutralButton("BUY!", (dialog, which) -> buyListener.onBuy(altProduct))
                 .show();
     }
 }

@@ -111,7 +111,7 @@ protected void onCreate(Bundle savedInstanceState) {
             findViewById(R.id.alternatesTitle),
             findViewById(R.id.alternatesText),
             findViewById(R.id.preferOrganicButton),
-            productName -> openWalmartSearch(productName));
+            product -> openShoppingSearch(product));
     alternatesController.setSuperiorTerms(superiorTerms);
 
     // 4. Setup Barcode Scanner Button
@@ -126,12 +126,12 @@ setupCategoryFilterPanel();
     autoCompleteManager.attachToEditText(searchBox);
 
     // 6. Setup Primary Retail Buy Button
-    Button walmartButton = findViewById(R.id.walmartButton);
-    if (walmartButton != null) {
-        walmartButton.setOnClickListener(v -> {
+    Button buyButton = findViewById(R.id.walmartButton);
+    if (buyButton != null) {
+        buyButton.setOnClickListener(v -> {
             String currentQuery = searchBox.getText().toString().trim();
             if (!currentQuery.isEmpty()) {
-                openWalmartSearch(currentQuery);
+                openShoppingSearch(currentQuery);
             }
         });
     }
@@ -261,9 +261,15 @@ setupCategoryFilterPanel();
     }
 
 
-    private void openWalmartSearch(String foodQuery) {
-        String walmartUrl = WalmartUrlBuilder.buildSearchUrl(foodQuery);
+    private void openShoppingSearch(String query) {
+        openShoppingUrl(ShoppingUrlBuilder.buildSearchUrl(query));
+    }
 
+    private void openShoppingSearch(ProductResult product) {
+        openShoppingUrl(ShoppingUrlBuilder.buildProductUrl(product));
+    }
+
+    private void openShoppingUrl(String shoppingUrl) {
         CustomTabColorSchemeParams colorParams = new CustomTabColorSchemeParams.Builder()
                 .setToolbarColor(ContextCompat.getColor(this, R.color.cream))
                 .build();
@@ -275,9 +281,9 @@ setupCategoryFilterPanel();
                 .build();
 
         try {
-            customTabsIntent.launchUrl(this, Uri.parse(walmartUrl));
+            customTabsIntent.launchUrl(this, Uri.parse(shoppingUrl));
         } catch (Exception e) {
-            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(walmartUrl));
+            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(shoppingUrl));
             startActivity(browserIntent);
         }
     }
@@ -305,7 +311,7 @@ setupCategoryFilterPanel();
         ingredientsCard.setVisibility(View.GONE);
     }
 
-    Button walmartButton = findViewById(R.id.walmartButton);
+    Button buyButton = findViewById(R.id.walmartButton);
     View flaggedTitle = findViewById(R.id.flaggedTitle);
 
     // Bind or dynamic click listener for viewing ingredients inside the verdict card
@@ -328,7 +334,7 @@ setupCategoryFilterPanel();
         verdictText.setTextColor(colorMuted);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         if (flaggedText != null) flaggedText.setVisibility(View.GONE);
-        if (walmartButton != null) walmartButton.setVisibility(View.GONE);
+        if (buyButton != null) buyButton.setVisibility(View.GONE);
         alternatesController.hide();
         return;
     }
@@ -362,21 +368,21 @@ setupCategoryFilterPanel();
         verdictText.setTextColor(colorMuted);
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         if (flaggedText != null) flaggedText.setVisibility(View.GONE);
-        if (walmartButton != null) walmartButton.setVisibility(View.GONE);
+        if (buyButton != null) buyButton.setVisibility(View.GONE);
         alternatesController.hide();
         return;
     }
 
     boolean isClean = result.flagged == null || result.flagged.isEmpty();
 
-    // 1. Walmart BUY Button Visibility
-    if (walmartButton != null) {
+    // 1. BUY Button Visibility
+    if (buyButton != null) {
         if (isClean) {
-            walmartButton.setVisibility(View.VISIBLE);
-            walmartButton.setText("BUY!");
-            walmartButton.setOnClickListener(v -> openWalmartSearch(result.name));
+            buyButton.setVisibility(View.VISIBLE);
+            buyButton.setText("BUY!");
+            buyButton.setOnClickListener(v -> openShoppingSearch(result));
         } else {
-            walmartButton.setVisibility(View.GONE);
+            buyButton.setVisibility(View.GONE);
         }
     }
 
