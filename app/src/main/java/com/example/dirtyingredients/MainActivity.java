@@ -73,12 +73,22 @@ public class MainActivity extends AppCompatActivity {
     private View alternatesCard;
     private TextView alternatesTitle;
     private TextView alternatesText;
+    private Button preferOrganicButton;
     private TextView toggleIngredientsButton;
     private TextView productTitleText;
     private TextView matchNoticeText;
 	private com.google.android.flexbox.FlexboxLayout categoryCheckboxContainer;
 
     private boolean isIngredientsExpanded = false;
+
+    // Prefer-organic toggle state + the last search's alternates context,
+    // so toggling re-ranks without a new network request.
+    private boolean preferOrganic = false;
+    private List<ProductResult> currentCleanAlternates = new ArrayList<>();
+    private String currentFoodType = "";
+    private boolean currentCategoryIntent = false;
+    private boolean currentAlternatesClean = true;
+    private Set<String> currentFlaggedCategories = new LinkedHashSet<>();
 
     private final Set<String> superiorTerms = new HashSet<>();
 
@@ -162,6 +172,13 @@ setupCategoryFilterPanel();
         alternatesCard = findViewById(R.id.alternatesCard);
         alternatesTitle = findViewById(R.id.alternatesTitle);
         alternatesText = findViewById(R.id.alternatesText);
+        preferOrganicButton = findViewById(R.id.preferOrganicButton);
+        if (preferOrganicButton != null) {
+            preferOrganicButton.setOnClickListener(v -> {
+                preferOrganic = !preferOrganic;
+                rerankAlternates();
+            });
+        }
         toggleIngredientsButton = findViewById(R.id.toggleIngredientsButton);
 		categoryCheckboxContainer = findViewById(R.id.categoryCheckboxContainer);
     }
@@ -226,6 +243,7 @@ setupCategoryFilterPanel();
         progress.setVisibility(ProgressBar.VISIBLE);
         searchButton.setEnabled(false);
         resultCard.setVisibility(LinearLayout.GONE);
+        preferOrganic = false;
         statusText.setText("Searching USDA FoodData Central…");
         ingredientsText.setText("");
 
@@ -251,6 +269,7 @@ setupCategoryFilterPanel();
                 AlternateSearchResult altSearch =
                         searchUSDAAlternates(foodType, apiCategory, categoryIntent, primaryResult);
                 List<ProductResult> rawAlternates = altSearch.alternates;
+                currentCleanAlternates = new ArrayList<>(rawAlternates);
 
                 // 5. Rank candidates and drop flagged items (Rank = Infinity)
                 List<AlternateRanker.RankedProduct> rankedAlternates = AlternateRanker.rankAndFilter(rawAlternates, superiorTerms);
@@ -700,6 +719,12 @@ private JSONArray fetchAlternatesPage(String foodCategory, boolean filterByCateg
 private void showAlternatesCard(String foodType, boolean categoryIntent, boolean isClean,
                                 List<AlternateRanker.RankedProduct> alternates,
                                 Set<String> flaggedCategories) {
+    // Stash the context so the prefer-organic toggle can re-rank without a new search.
+    currentFoodType = foodType;
+    currentCategoryIntent = categoryIntent;
+    currentAlternatesClean = isClean;
+    currentFlaggedCategories = flaggedCategories != null ? flaggedCategories : new LinkedHashSet<>();
+
     if (alternatesCard != null && alternatesTitle != null && alternatesText != null) {
         String alternatesHeading = (categoryIntent && !TextUtils.isEmpty(foodType))
                 ? "Clean choices in " + foodType
@@ -721,7 +746,9 @@ private void showAlternatesCard(String foodType, boolean categoryIntent, boolean
                     itemHeader += " (" + alt.brand + ")";
                 }
                 itemHeader += "\n   ✓ Clean • " + item.ingredientCount + " ingredients";
-                if (item.superiorCount > 0) {
+                if (preferOrganic) {
+                    itemHeader += item.getOrganicTag();
+                } else if (item.superiorCount > 0) {
                     itemHeader += " • " + item.superiorCount + " superior badge(s)";
                 }
                 itemHeader += "\n\n";
@@ -747,7 +774,24 @@ private void showAlternatesCard(String foodType, boolean categoryIntent, boolean
 
             alternatesText.setText(spannableBuilder);
             alternatesText.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
+
+            // The prefer-organic toggle only appears when at least one clean
+            // alternative actually has an organic ingredient.
+            boolean anyOrganic = false;
+            for (AlternateRanker.RankedProduct rp : alternates) {
+                if (rp.hasOrganic) {
+                    anyOrganic = true;
+                    break;
+                }
+            }
+            if (preferOrganicButton != null) {
+                preferOrganicButton.setVisibility(anyOrganic ? View.VISIBLE : View.GONE);
+                updateOrganicButton();
+            }
         } else {
+            if (preferOrganicButton != null) {
+                preferOrganicButton.setVisibility(View.GONE);
+            }
             // Dirty product with no clean options, or a category search with no
             // clean choices found: say so explicitly instead of hiding the card.
             if (!isClean || categoryIntent) {
@@ -770,6 +814,26 @@ private void showAlternatesCard(String foodType, boolean categoryIntent, boolean
             }
         }
     }
+}
+
+/**
+ * Re-ranks the current clean alternates with the prefer-organic toggle state
+ * and re-binds the alternates card. No network request needed.
+ */
+private void rerankAlternates() {
+    List<AlternateRanker.RankedProduct> reranked =
+            AlternateRanker.rankAndFilter(currentCleanAlternates, superiorTerms, preferOrganic);
+    if (reranked.size() > 5) {
+        reranked = reranked.subList(0, 5);
+    }
+    updateOrganicButton();
+    showAlternatesCard(currentFoodType, currentCategoryIntent, currentAlternatesClean,
+            reranked, currentFlaggedCategories);
+}
+
+private void updateOrganicButton() {
+    if (preferOrganicButton == null) return;
+    preferOrganicButton.setText(preferOrganic ? "\u2713 PREFER ORGANIC" : "PREFER ORGANIC");
 }
 
 

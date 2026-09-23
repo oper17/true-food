@@ -311,6 +311,18 @@
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
+            <Button
+                android:id="@+id/preferOrganicButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_button_primary"
+                android:text="PREFER ORGANIC"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
             <TextView
                 android:id="@+id/alternatesText"
                 android:layout_width="match_parent"
