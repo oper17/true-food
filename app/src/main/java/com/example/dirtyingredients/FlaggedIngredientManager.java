@@ -106,6 +106,23 @@ public class FlaggedIngredientManager {
         return false;
     }
 
+    /**
+     * Builds a word-boundary regex for a flagged term that tolerates irregular
+     * whitespace between words and a plural "s" on the final word, so
+     * "carob bean gums" matches the listed term "carob bean gum".
+     */
+    private static String phrasePattern(String term) {
+        String[] words = term.trim().split("\\s+");
+        StringBuilder sb = new StringBuilder("\\b");
+        for (int i = 0; i < words.length; i++) {
+            if (i > 0) sb.append("\\s+");
+            sb.append(Pattern.quote(words[i]));
+            if (i == words.length - 1) sb.append("s?");
+        }
+        sb.append("\\b");
+        return sb.toString();
+    }
+
     public static MatchResult analyzeIngredients(Context context, String rawIngredientsText) {
         MatchResult result = new MatchResult();
 
@@ -166,9 +183,11 @@ public class FlaggedIngredientManager {
 
                         String lowerIngredient = rawIngredient.toLowerCase(Locale.US);
 
-                        // Word-boundary matching to avoid partial substring false positives
-                        String patternString = "\\b" + Pattern.quote(lowerIngredient) + "\\b";
-                        Pattern pattern = Pattern.compile(patternString);
+                        // Word-boundary phrase matching, tolerant of irregular
+                        // whitespace and a plural "s" on the final word, so label
+                        // phrasing like "carob bean gums" still matches the listed
+                        // term "carob bean gum".
+                        Pattern pattern = Pattern.compile(phrasePattern(lowerIngredient));
 
                         if (pattern.matcher(lowerCaseIngredients).find()) {
                             if (!matchedInThisCategory.contains(rawIngredient)) {
