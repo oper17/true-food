@@ -2,11 +2,14 @@ package com.example.dirtyingredients;
 
 import android.content.Intent;
 import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
@@ -27,9 +30,13 @@ import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 import androidx.browser.customtabs.CustomTabColorSchemeParams;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.ContextCompat;
+import androidx.core.widget.NestedScrollView;
+
+import com.google.android.flexbox.FlexboxLayout;
 
 import org.json.JSONObject;
 
@@ -45,6 +52,7 @@ import java.util.Set;
 import com.example.dirtyingredients.model.AlternateSearchResult;
 import com.example.dirtyingredients.model.ProductResult;
 import com.example.dirtyingredients.network.UsdaApiClient;
+import com.example.dirtyingredients.FlaggedIngredientManager;
 import com.example.dirtyingredients.search.CleanAlternateFinder;
 import com.example.dirtyingredients.ui.AlternatesCardController;
 import com.example.dirtyingredients.util.StringNormalizer;
@@ -68,6 +76,21 @@ public class MainActivity extends AppCompatActivity {
     private TextView productTitleText;
     private TextView matchNoticeText;
 	private com.google.android.flexbox.FlexboxLayout categoryCheckboxContainer;
+
+    // Filter collapse: full checkbox panel vs. compact summary bar
+    private LinearLayout categoryFilterPanel;
+    private LinearLayout filterSummaryBar;
+    private TextView filterSummaryText;
+
+    // Sticky results header overlay
+    private LinearLayout stickyResultsBar;
+    private TextView stickyResultsText;
+
+    // Verdict pass/fail chips on the primary product card
+    private FlexboxLayout verdictChipsContainer;
+
+    // Cached flagged-category names from flagged_ingredients.json
+    private List<String> flaggedCategoriesCache = null;
 
     private boolean isIngredientsExpanded = false;
 
@@ -116,9 +139,10 @@ protected void onCreate(Bundle savedInstanceState) {
             findViewById(R.id.alternatesCard),
             findViewById(R.id.alternatesTitle),
             findViewById(R.id.alternatesText),
-            findViewById(R.id.preferOrganicButton),
+            (SwitchCompat) findViewById(R.id.preferOrganicSwitch),
             product -> openShoppingSearch(product));
     alternatesController.setSuperiorTerms(superiorTerms);
+    alternatesController.setOnClearFilters(this::clearAllFiltersAndSearch);
 
     // 4. Setup Barcode Scanner Button
     ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
@@ -132,6 +156,34 @@ setupCategoryFilterPanel();
             new UnbrandedSuggestionProvider(this), new UsdaSuggestionProvider(this));
     autoCompleteManager = new FoodAutoCompleteManager(this, suggestionProvider);
     autoCompleteManager.attachToEditText(searchBox);
+    autoCompleteManager.setOnRecentSearchSelected(query -> {
+        searchBox.setText(query);
+        search();
+    });
+
+    // Filter summary bar: tap to expand the full filter panel again.
+    if (filterSummaryBar != null) {
+        filterSummaryBar.setOnClickListener(v -> {
+            if (categoryFilterPanel != null) {
+                categoryFilterPanel.setVisibility(View.VISIBLE);
+            }
+            filterSummaryBar.setVisibility(View.GONE);
+        });
+    }
+
+    // Sticky results header: appears once the alternates card scrolls into
+    // view; tapping it scrolls back to the card.
+    NestedScrollView mainRoot = findViewById(R.id.mainRootLayout);
+    View alternatesCardView = findViewById(R.id.alternatesCard);
+    if (mainRoot != null && alternatesCardView != null && stickyResultsBar != null) {
+        mainRoot.setOnScrollChangeListener((v, scrollX, scrollY, oldX, oldY) -> {
+            boolean show = alternatesCardView.getVisibility() == View.VISIBLE
+                    && scrollY > alternatesCardView.getTop();
+            stickyResultsBar.setVisibility(show ? View.VISIBLE : View.GONE);
+        });
+        stickyResultsBar.setOnClickListener(v ->
+                mainRoot.smoothScrollTo(0, Math.max(0, alternatesCardView.getTop())));
+    }
 
     // 6. Setup Primary Retail Buy Button
     Button buyButton = findViewById(R.id.walmartButton);
@@ -173,6 +225,12 @@ setupCategoryFilterPanel();
         ingredientsCard = findViewById(R.id.ingredientsCard);
         toggleIngredientsButton = findViewById(R.id.toggleIngredientsButton);
 		categoryCheckboxContainer = findViewById(R.id.categoryCheckboxContainer);
+        categoryFilterPanel = findViewById(R.id.categoryFilterPanel);
+        filterSummaryBar = findViewById(R.id.filterSummaryBar);
+        filterSummaryText = findViewById(R.id.filterSummaryText);
+        stickyResultsBar = findViewById(R.id.stickyResultsBar);
+        stickyResultsText = findViewById(R.id.stickyResultsText);
+        verdictChipsContainer = findViewById(R.id.verdictChipsContainer);
     }
 
     private void loadSuperiorTerms() {
@@ -221,6 +279,17 @@ setupCategoryFilterPanel();
             return;
         }
         AnalyticsTracker.searchPerformed(product.length());
+        RecentSearches.add(this, product);
+
+        // Collapse the filter panel into its summary bar once a search is issued.
+        if (categoryFilterPanel != null && filterSummaryBar != null) {
+            categoryFilterPanel.setVisibility(View.GONE);
+            filterSummaryBar.setVisibility(View.VISIBLE);
+            updateFilterSummary();
+        }
+        if (stickyResultsBar != null) {
+            stickyResultsBar.setVisibility(View.GONE);
+        }
 
         progress.setVisibility(ProgressBar.VISIBLE);
         searchButton.setEnabled(false);
@@ -311,7 +380,8 @@ setupCategoryFilterPanel();
     // primary verdict card and show only the clean-choices card.
     if (categoryIntent) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
-        alternatesController.show(foodType, true, true, flaggedCategories);
+        alternatesController.show(foodType, true, true, flaggedCategories, countActiveFilters());
+        updateStickyBar();
         return;
     }
 
@@ -350,6 +420,7 @@ setupCategoryFilterPanel();
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         if (flaggedText != null) flaggedText.setVisibility(View.GONE);
         if (buyButton != null) buyButton.setVisibility(View.GONE);
+        bindVerdictChips(null);
         alternatesController.hide();
         return;
     }
@@ -384,6 +455,7 @@ setupCategoryFilterPanel();
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         if (flaggedText != null) flaggedText.setVisibility(View.GONE);
         if (buyButton != null) buyButton.setVisibility(View.GONE);
+        bindVerdictChips(null);
         alternatesController.hide();
         return;
     }
@@ -448,16 +520,125 @@ setupCategoryFilterPanel();
         }
     }
 
-    // 3. Clean Alternates Section
-    alternatesController.show(foodType, categoryIntent, isClean, flaggedCategories);
+    // 3. Verdict chips: per-category pass/fail so the verdict shows its work.
+    bindVerdictChips(result);
+
+    // 4. Clean Alternates Section
+    alternatesController.show(foodType, categoryIntent, isClean, flaggedCategories,
+            countActiveFilters());
+    updateStickyBar();
+}
+
+/** Cached flagged-category names from flagged_ingredients.json. */
+private List<String> getFlaggedCategories() {
+    if (flaggedCategoriesCache == null) {
+        flaggedCategoriesCache = new ArrayList<>();
+        try (InputStream is = getAssets().open("flagged_ingredients.json");
+             BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(is, StandardCharsets.UTF_8))) {
+            StringBuilder jsonBuilder = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                jsonBuilder.append(line);
+            }
+            JSONObject rootJson = new JSONObject(jsonBuilder.toString());
+            Iterator<String> keys = rootJson.keys();
+            while (keys.hasNext()) {
+                flaggedCategoriesCache.add(keys.next());
+            }
+        } catch (Exception e) {
+            Log.e("MainActivity", "Failed to load flagged categories", e);
+        }
+    }
+    return flaggedCategoriesCache;
+}
+
+/** Number of currently enabled flagged-category filters. */
+private int countActiveFilters() {
+    int count = 0;
+    if (categoryCheckboxContainer != null) {
+        for (int i = 0; i < categoryCheckboxContainer.getChildCount(); i++) {
+            View child = categoryCheckboxContainer.getChildAt(i);
+            if (child instanceof CheckBox && ((CheckBox) child).isChecked()) {
+                count++;
+            }
+        }
+    }
+    return count;
+}
+
+private void updateFilterSummary() {
+    if (filterSummaryText == null) return;
+    int active = countActiveFilters();
+    filterSummaryText.setText("Filters • " + active + " active");
+}
+
+/** Disables every flagged-category filter and re-runs the current search. */
+private void clearAllFiltersAndSearch() {
+    if (categoryCheckboxContainer != null) {
+        for (int i = 0; i < categoryCheckboxContainer.getChildCount(); i++) {
+            View child = categoryCheckboxContainer.getChildAt(i);
+            if (child instanceof CheckBox) {
+                ((CheckBox) child).setChecked(false);
+            }
+        }
+    }
+    search();
 }
 
 /**
- * Binds the clean-alternates card. For category searches the heading names the
- * category ("Clean choices in <Category>"); otherwise it reads "Clean Alternates".
- * When a category search finds nothing, the blocking flagged categories are listed
- * so the user knows why (e.g. everything contains gluten).
+ * Per-category pass/fail chips under the verdict: green "✓ No X" for enabled
+ * categories with no flagged match, red "⚠ X" for the ones that fired.
  */
+private void bindVerdictChips(ProductResult result) {
+    if (verdictChipsContainer == null) return;
+    verdictChipsContainer.removeAllViews();
+    if (result == null || !result.found || TextUtils.isEmpty(result.ingredients.trim())) {
+        verdictChipsContainer.setVisibility(View.GONE);
+        return;
+    }
+    Set<String> failed = new HashSet<>();
+    if (result.matchResult != null && result.matchResult.categoryMap != null) {
+        failed.addAll(result.matchResult.categoryMap.keySet());
+    }
+    boolean any = false;
+    for (String category : getFlaggedCategories()) {
+        if (!CategoryPreferenceManager.isCategoryEnabled(this, category)) continue;
+        any = true;
+        boolean isFailed = failed.contains(category);
+        TextView chip = new TextView(this);
+        chip.setText(isFailed ? "⚠ " + category
+                : "✓ No " + category.toLowerCase(Locale.US));
+        chip.setTextSize(12f);
+        chip.setTextColor(Color.parseColor(isFailed ? "#991B1B" : "#166534"));
+        chip.setBackgroundResource(isFailed ? R.drawable.chip_dirty_background
+                : R.drawable.chip_clean_background);
+        int hPad = dp(10), vPad = dp(5);
+        chip.setPadding(hPad, vPad, hPad, vPad);
+        FlexboxLayout.LayoutParams params = new FlexboxLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, dp(6), dp(6));
+        chip.setLayoutParams(params);
+        verdictChipsContainer.addView(chip);
+    }
+    verdictChipsContainer.setVisibility(any ? View.VISIBLE : View.GONE);
+}
+
+/** Refreshes the sticky results bar from the alternates controller's state. */
+private void updateStickyBar() {
+    if (stickyResultsBar == null || stickyResultsText == null) return;
+    if (!alternatesController.isCardShowing()) {
+        stickyResultsBar.setVisibility(View.GONE);
+        return;
+    }
+    stickyResultsText.setText(alternatesController.getHeading()
+            + " • Exact (" + alternatesController.getExactCount() + ")"
+            + " • More (" + alternatesController.getMoreCount() + ")");
+}
+
+private int dp(int dps) {
+    return Math.round(dps * getResources().getDisplayMetrics().density);
+}
 
 private void showFullIngredientsDialog(ProductResult product) {
     String title = product.name;
@@ -465,9 +646,54 @@ private void showFullIngredientsDialog(ProductResult product) {
         title += " (" + product.brand + ")";
     }
 
+    SpannableStringBuilder content = new SpannableStringBuilder();
+
+    // Verdict summary line
+    boolean isClean = product.flagged == null || product.flagged.isEmpty();
+    int verdictStart = content.length();
+    if (isClean) {
+        content.append("✓ Clean — no flagged categories\n\n");
+    } else {
+        content.append("⚠ Flagged: ")
+                .append(TextUtils.join(", ", product.flagged))
+                .append("\n\n");
+    }
+    content.setSpan(new StyleSpan(Typeface.BOLD),
+            verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    content.setSpan(new ForegroundColorSpan(Color.parseColor(isClean ? "#166534" : "#991B1B")),
+            verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+    // Ingredients header
+    int headerStart = content.length();
+    content.append("INGREDIENTS:\n\n");
+    content.setSpan(new StyleSpan(Typeface.BOLD),
+            headerStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+    // Ingredient list with superior ("clean highlight") ingredients highlighted
+    String[] tokens = product.ingredients.split(",");
+    for (int i = 0; i < tokens.length; i++) {
+        String trimmed = tokens[i].trim();
+        if (i > 0) content.append(", ");
+        int tokenStart = content.length();
+        content.append(trimmed);
+        int tokenEnd = content.length();
+        if (FlaggedIngredientManager.isSuperiorIngredient(this, trimmed)) {
+            content.setSpan(new ForegroundColorSpan(Color.parseColor("#15803D")),
+                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            content.setSpan(new StyleSpan(Typeface.BOLD),
+                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+    }
+
+    TextView messageView = new TextView(this);
+    messageView.setText(content);
+    messageView.setTextSize(15f);
+    messageView.setPadding(48, 32, 48, 16);
+    messageView.setLineSpacing(1.2f, 1.1f);
+
     new AlertDialog.Builder(this)
             .setTitle(title)
-            .setMessage("FULL INGREDIENTS:\n\n" + product.ingredients)
+            .setView(messageView)
             .setPositiveButton("Close", null)
             .show();
 }
@@ -539,26 +765,7 @@ private void setupCategoryFilterPanel() {
     if (categoryCheckboxContainer == null) return;
     categoryCheckboxContainer.removeAllViews();
 
-    List<String> categories = new ArrayList<>();
-
-    // Read categories dynamically from JSON asset
-    try (InputStream is = getAssets().open("flagged_ingredients.json");
-         BufferedReader reader = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8))) {
-        
-        StringBuilder jsonBuilder = new StringBuilder();
-        String line;
-        while ((line = reader.readLine()) != null) {
-            jsonBuilder.append(line);
-        }
-
-        JSONObject rootJson = new JSONObject(jsonBuilder.toString());
-        Iterator<String> keys = rootJson.keys();
-        while (keys.hasNext()) {
-            categories.add(keys.next());
-        }
-    } catch (Exception e) {
-        Log.e("MainActivity", "Failed to load categories for checkboxes", e);
-    }
+    List<String> categories = getFlaggedCategories();
 
     for (String category : categories) {
         CheckBox checkBox = new CheckBox(this);

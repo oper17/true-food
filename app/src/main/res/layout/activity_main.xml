@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<androidx.core.widget.NestedScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+<androidx.core.widget.NestedScrollView
     android:id="@+id/mainRootLayout"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -36,17 +40,13 @@
                     android:gravity="center_vertical"
                     android:orientation="horizontal">
 
-                    <!-- App Brand Badge -->
-                    <TextView
-                        android:layout_width="32dp"
-                        android:layout_height="32dp"
+                    <!-- App Brand Badge: launcher icon (magnifier + leaf) -->
+                    <ImageView
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
                         android:layout_marginEnd="10dp"
-                        android:background="@drawable/bg_button_primary"
-                        android:gravity="center"
-                        android:text="TF"
-                        android:textColor="#FFFFFF"
-                        android:textSize="14sp"
-                        android:textStyle="bold" />
+                        android:contentDescription="TrueFood"
+                        android:src="@mipmap/ic_launcher" />
 
                     <TextView
                         android:layout_width="wrap_content"
@@ -141,6 +141,39 @@
         app:justifyContent="flex_start" />
 </LinearLayout>
 
+        <!-- Collapsed filter summary: shown after a search is issued; tap to expand -->
+        <LinearLayout
+            android:id="@+id/filterSummaryBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="8dp"
+            android:background="@drawable/bg_search_box"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/filterSummaryText"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Filters • 0 active"
+                android:textColor="#374151"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="▾"
+                android:textColor="#6B7280"
+                android:textSize="16sp" />
+        </LinearLayout>
+
         <!-- Primary Action Button -->
         <Button
             android:id="@+id/searchButton"
@@ -204,6 +237,14 @@
                 android:layout_height="wrap_content"
                 android:textSize="22sp"
                 android:textStyle="bold" />
+
+            <com.google.android.flexbox.FlexboxLayout
+                android:id="@+id/verdictChipsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                app:flexWrap="wrap"
+                app:justifyContent="flex_start" />
 
             <TextView
                 android:id="@+id/flaggedTitle"
@@ -311,20 +352,41 @@
                 android:textSize="17sp"
                 android:textStyle="bold" />
 
-            <Button
-                android:id="@+id/preferOrganicButton"
+            <LinearLayout
+                android:id="@+id/preferOrganicRow"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:background="@drawable/bg_button_primary"
-                android:letterSpacing="0.02"
-                android:minHeight="54dp"
-                android:padding="14dp"
-                android:text="🌿 Prefer Organic"
-                android:textColor="#FFFFFF"
-                android:textSize="15sp"
-                android:textStyle="bold"
-                android:visibility="gone" />
+                android:background="@drawable/bg_search_box"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:padding="12dp"
+                android:visibility="gone">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="🌿 Prefer Organic"
+                    android:textColor="#111827"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/preferOrganicStateText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="8dp"
+                    android:text="OFF"
+                    android:textColor="#6B7280"
+                    android:textSize="13sp"
+                    android:textStyle="bold" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/preferOrganicSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+            </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/exactMatchesPanel"
@@ -336,14 +398,34 @@
                 android:padding="14dp"
                 android:visibility="gone">
 
-                <TextView
-                    android:id="@+id/exactMatchesTitle"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Exact matches"
-                    android:textColor="#166534"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/exactMatchesTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Exact matches"
+                        android:textColor="#166534"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/exactLegendButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="6dp"
+                        android:text="ⓘ"
+                        android:textColor="#166534"
+                        android:textSize="16sp" />
+                </LinearLayout>
 
                 <androidx.core.widget.NestedScrollView
                     android:layout_width="match_parent"
@@ -357,13 +439,11 @@
                     android:scrollbarThumbVertical="@drawable/scrollbar_thumb_vertical"
                     android:scrollbarTrackVertical="@drawable/scrollbar_track_vertical">
 
-                    <TextView
-                        android:id="@+id/exactMatchesText"
+                    <LinearLayout
+                        android:id="@+id/exactMatchesList"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:lineSpacingExtra="4dp"
-                        android:textColor="#374151"
-                        android:textSize="14sp" />
+                        android:orientation="vertical" />
                 </androidx.core.widget.NestedScrollView>
             </LinearLayout>
 
@@ -377,14 +457,34 @@
                 android:padding="14dp"
                 android:visibility="gone">
 
-                <TextView
-                    android:id="@+id/moreOptionsTitle"
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="More clean options"
-                    android:textColor="#1E40AF"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/moreOptionsTitle"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="More clean options"
+                        android:textColor="#1E40AF"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/moreLegendButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:padding="6dp"
+                        android:text="ⓘ"
+                        android:textColor="#1E40AF"
+                        android:textSize="16sp" />
+                </LinearLayout>
 
                 <androidx.core.widget.NestedScrollView
                     android:layout_width="match_parent"
@@ -398,13 +498,11 @@
                     android:scrollbarThumbVertical="@drawable/scrollbar_thumb_vertical"
                     android:scrollbarTrackVertical="@drawable/scrollbar_track_vertical">
 
-                    <TextView
-                        android:id="@+id/moreOptionsText"
+                    <LinearLayout
+                        android:id="@+id/moreOptionsList"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:lineSpacingExtra="4dp"
-                        android:textColor="#374151"
-                        android:textSize="14sp" />
+                        android:orientation="vertical" />
                 </androidx.core.widget.NestedScrollView>
             </LinearLayout>
 
@@ -416,6 +514,20 @@
                 android:lineSpacingExtra="4dp"
                 android:textColor="#374151"
                 android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/clearFiltersButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:background="@drawable/bg_button_primary"
+                android:paddingStart="20dp"
+                android:paddingEnd="20dp"
+                android:text="Clear all filters"
+                android:textColor="#FFFFFF"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
         </LinearLayout>
 
         <TextView
@@ -431,3 +543,38 @@
 
     </LinearLayout>
 </androidx.core.widget.NestedScrollView>
+
+    <!-- Sticky results header: appears once the alternates card scrolls into view.
+         Tapping it scrolls back to the card. -->
+    <LinearLayout
+        android:id="@+id/stickyResultsBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:background="#FFFFFF"
+        android:elevation="4dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/stickyResultsText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="#111827"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="↑"
+            android:textColor="#6B7280"
+            android:textSize="16sp" />
+    </LinearLayout>
+
+</FrameLayout>

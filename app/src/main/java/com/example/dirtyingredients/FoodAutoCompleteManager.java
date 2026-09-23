@@ -1,16 +1,23 @@
 package com.example.dirtyingredients;
 
 import android.content.Context;
+import android.graphics.Color;
+import android.graphics.drawable.ColorDrawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
+import android.widget.LinearLayout;
 import android.widget.ListPopupWindow;
+import android.widget.PopupWindow;
+import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -18,6 +25,11 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FoodAutoCompleteManager {
+
+    /** Fired when the user taps a recent-search bubble. */
+    public interface OnRecentSearchSelected {
+        void onSelected(String query);
+    }
 
     private final Context context;
     private final SuggestionProvider suggestionProvider;
@@ -27,6 +39,8 @@ public class FoodAutoCompleteManager {
     private ListPopupWindow popupWindow;
     private ArrayAdapter<String> adapter;
     private Runnable searchRunnable;
+    private PopupWindow recentsPopup;
+    private OnRecentSearchSelected recentSearchListener;
 
     // Guard flag to suppress auto-complete triggers during programmatic edits/selections
     private boolean isSuppressingSuggestions = false;
@@ -34,6 +48,10 @@ public class FoodAutoCompleteManager {
     public FoodAutoCompleteManager(Context context, SuggestionProvider suggestionProvider) {
         this.context = context;
         this.suggestionProvider = suggestionProvider;
+    }
+
+    public void setOnRecentSearchSelected(OnRecentSearchSelected listener) {
+        this.recentSearchListener = listener;
     }
 
     public void attachToEditText(EditText editText) {
@@ -95,6 +113,16 @@ public class FoodAutoCompleteManager {
 
                 String query = s.toString().trim();
 
+                if (query.isEmpty()) {
+                    popupWindow.dismiss();
+                    if (editText.hasFocus()) {
+                        showRecentsPopup(editText);
+                    }
+                    return;
+                }
+
+                dismissRecentsPopup();
+
                 if (query.length() < 2) {
                     popupWindow.dismiss();
                     return;
@@ -114,10 +142,15 @@ public class FoodAutoCompleteManager {
             }
         });
 
-        // Dismiss popup if focus is lost
+        // Dismiss popups if focus is lost
         editText.setOnFocusChangeListener((v, hasFocus) -> {
-            if (!hasFocus && popupWindow.isShowing()) {
-                popupWindow.dismiss();
+            if (!hasFocus) {
+                if (popupWindow.isShowing()) {
+                    popupWindow.dismiss();
+                }
+                dismissRecentsPopup();
+            } else if (editText.getText().toString().trim().isEmpty()) {
+                showRecentsPopup(editText);
             }
         });
     }
@@ -132,6 +165,7 @@ public class FoodAutoCompleteManager {
         }
 
         if (suggestions != null && !suggestions.isEmpty()) {
+            dismissRecentsPopup();
             List<String> capped = suggestions.size() > MAX_SUGGESTIONS
                     ? suggestions.subList(0, MAX_SUGGESTIONS)
                     : suggestions;
@@ -153,6 +187,94 @@ public class FoodAutoCompleteManager {
         if (popupWindow != null && popupWindow.isShowing()) {
             popupWindow.dismiss();
         }
+        dismissRecentsPopup();
+    }
+
+    /**
+     * Shows the "your recent searches" panel: a single-line horizontally
+     * scrollable strip of bubble chips anchored under the search box.
+     */
+    private void showRecentsPopup(EditText editText) {
+        if (isSuppressingSuggestions || !editText.hasFocus()) return;
+        List<String> recents = RecentSearches.get(context);
+        if (recents.isEmpty()) return;
+        dismissRecentsPopup();
+
+        LinearLayout panel = new LinearLayout(context);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        int pad = dp(12);
+        panel.setPadding(pad, dp(10), pad, dp(10));
+        panel.setBackgroundColor(Color.WHITE);
+
+        TextView title = new TextView(context);
+        title.setText("your recent searches");
+        title.setTextSize(12f);
+        title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
+        title.setTextColor(Color.parseColor("#6B7280"));
+        title.setPadding(0, 0, 0, dp(8));
+        panel.addView(title);
+
+        HorizontalScrollView scroller = new HorizontalScrollView(context);
+        scroller.setHorizontalScrollBarEnabled(false);
+        LinearLayout bubbles = new LinearLayout(context);
+        bubbles.setOrientation(LinearLayout.HORIZONTAL);
+        for (String recent : recents) {
+            bubbles.addView(buildBubble(editText, recent));
+        }
+        scroller.addView(bubbles);
+        panel.addView(scroller);
+
+        recentsPopup = new PopupWindow(panel,
+                editText.getWidth() > 0 ? editText.getWidth()
+                        : ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                false);
+        recentsPopup.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        recentsPopup.setOutsideTouchable(true);
+        recentsPopup.setElevation(dp(8));
+        recentsPopup.showAsDropDown(editText);
+    }
+
+    private TextView buildBubble(EditText editText, String query) {
+        TextView bubble = new TextView(context);
+        bubble.setText(query);
+        bubble.setTextSize(13f);
+        bubble.setTextColor(Color.parseColor("#1B4332"));
+        bubble.setBackgroundResource(R.drawable.bg_bubble);
+        bubble.setSingleLine(true);
+        int hPad = dp(14);
+        int vPad = dp(8);
+        bubble.setPadding(hPad, vPad, hPad, vPad);
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        params.setMargins(0, 0, dp(8), 0);
+        bubble.setLayoutParams(params);
+        bubble.setClickable(true);
+        bubble.setFocusable(true);
+        bubble.setOnClickListener(v -> {
+            isSuppressingSuggestions = true;
+            editText.setText(query);
+            editText.setSelection(query.length());
+            dismissRecentsPopup();
+            popupWindow.dismiss();
+            isSuppressingSuggestions = false;
+            if (recentSearchListener != null) {
+                recentSearchListener.onSelected(query);
+            }
+        });
+        return bubble;
+    }
+
+    private void dismissRecentsPopup() {
+        if (recentsPopup != null && recentsPopup.isShowing()) {
+            recentsPopup.dismiss();
+        }
+        recentsPopup = null;
+    }
+
+    private int dp(int dps) {
+        float density = context.getResources().getDisplayMetrics().density;
+        return Math.round(dps * density);
     }
 
     private void cancelPendingSearch() {
