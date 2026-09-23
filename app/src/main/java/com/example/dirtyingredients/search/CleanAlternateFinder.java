@@ -24,7 +24,10 @@ import java.util.Set;
  * organic items are a small minority that would otherwise never be seen.
  * A second, explicit {@code "organic <category>"} query hunts organic
  * versions, since USDA full-text search matches "organic" against the
- * description, ingredients, and brand.
+ * description, ingredients, and brand. For category (unbranded) searches the
+ * pool is seeded with the user's raw query first, so the strict all-tokens
+ * exact filter has query-relevant items to match (e.g. "cream cheese"
+ * classifies to the broad "Cheese" category).
  */
 public class CleanAlternateFinder {
 
@@ -40,7 +43,8 @@ public class CleanAlternateFinder {
     }
 
     public AlternateSearchResult findCleanAlternates(String foodCategory, boolean filterByCategory,
-                                                     boolean categoryIntent, ProductResult primaryResult)
+                                                     boolean categoryIntent, ProductResult primaryResult,
+                                                     String userQuery)
             throws Exception {
         AlternateSearchResult result = new AlternateSearchResult();
 
@@ -62,6 +66,16 @@ public class CleanAlternateFinder {
         String primaryKey = StringNormalizer.normalize(primaryResult.name)
                 + "|" + StringNormalizer.normalize(primaryResult.brand);
         seenProductKeys.add(primaryKey);
+
+        // For a category (unbranded) search, seed the pool with the user's actual
+        // query first. The category pass below is broad ("cream cheese" classifies
+        // to "Cheese"), so without this the pool would hold generic category items
+        // and the strict all-tokens exact filter would rarely match anything.
+        if (categoryIntent && userQuery != null && !userQuery.trim().isEmpty()
+                && !userQuery.trim().equalsIgnoreCase(foodCategory)) {
+            collectCleanAlternates(result, seenProductKeys, foodCategory,
+                    false, userQuery.trim(), 2);
+        }
 
         collectCleanAlternates(result, seenProductKeys, foodCategory,
                 filterByCategory, foodCategory, 3);

@@ -249,7 +249,7 @@ setupCategoryFilterPanel();
 
                 // 4. Fetch clean candidates (+ which flagged categories blocked the rest)
                 AlternateSearchResult altSearch = alternateFinder.findCleanAlternates(
-                        foodType, apiCategory, categoryIntent, primaryResult);
+                        foodType, apiCategory, categoryIntent, primaryResult, product);
                 List<ProductResult> rawAlternates = altSearch.alternates;
                 alternatesController.setPool(rawAlternates, StringNormalizer.wordTokens(product),
                         categoryIntent);
