@@ -48,6 +48,8 @@ public class FoodAutoCompleteManager {
         // 2. Selection Event: User taps a suggestion
         popupWindow.setOnItemClickListener((AdapterView<?> parent, View view, int position, long id) -> {
             String selectedItem = adapter.getItem(position);
+            AnalyticsTracker.suggestionTapped(
+                    position, suggestionProvider.isUnbrandedSuggestion(selectedItem));
             
             // Enable suppression guard before updating text programmatically
             isSuppressingSuggestions = true;

@@ -82,12 +82,15 @@ public class MainActivity extends AppCompatActivity {
     private final ActivityResultLauncher<Intent> barcodeLauncher = registerForActivityResult(
             new ActivityResultContracts.StartActivityForResult(),
             result -> {
+                boolean success = false;
                 if (result.getResultCode() == RESULT_OK && result.getData() != null) {
                     String scannedBarcode = result.getData().getStringExtra(BarcodeScannerActivity.EXTRA_BARCODE);
                     if (scannedBarcode != null && !scannedBarcode.trim().isEmpty()) {
+                        success = true;
                         lookupBarcodeAndSearch(scannedBarcode.trim());
                     }
                 }
+                AnalyticsTracker.barcodeScanned(success);
             }
     );
 @Override
@@ -96,6 +99,8 @@ protected void onCreate(Bundle savedInstanceState) {
     setContentView(R.layout.activity_main);
 
     setTitle("TrueFood");
+
+    AnalyticsTracker.init(this);
 
     // 1. Bind UI Components
     bindViews();
@@ -134,6 +139,7 @@ setupCategoryFilterPanel();
         buyButton.setOnClickListener(v -> {
             String currentQuery = searchBox.getText().toString().trim();
             if (!currentQuery.isEmpty()) {
+                AnalyticsTracker.buyTapped("search_box");
                 openShoppingSearch(currentQuery);
             }
         });
@@ -214,6 +220,7 @@ setupCategoryFilterPanel();
             searchBox.setError("Enter a food product name");
             return;
         }
+        AnalyticsTracker.searchPerformed(product.length());
 
         progress.setVisibility(ProgressBar.VISIBLE);
         searchButton.setEnabled(false);
@@ -387,7 +394,10 @@ setupCategoryFilterPanel();
         if (isClean) {
             buyButton.setVisibility(View.VISIBLE);
             buyButton.setText("BUY!");
-            buyButton.setOnClickListener(v -> openShoppingSearch(result));
+            buyButton.setOnClickListener(v -> {
+                AnalyticsTracker.buyTapped("primary_product");
+                openShoppingSearch(result);
+            });
         } else {
             buyButton.setVisibility(View.GONE);
         }
@@ -560,6 +570,7 @@ private void setupCategoryFilterPanel() {
 
         checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
             CategoryPreferenceManager.setCategoryEnabled(MainActivity.this, category, isChecked);
+            AnalyticsTracker.categoryToggled(category, isChecked);
         });
 
         com.google.android.flexbox.FlexboxLayout.LayoutParams params =

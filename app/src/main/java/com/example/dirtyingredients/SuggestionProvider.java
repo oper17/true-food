@@ -8,4 +8,9 @@ import java.util.List;
  */
 public interface SuggestionProvider {
     List<String> fetchSuggestions(String query) throws Exception;
+
+    /** Whether a returned suggestion came from the offline unbranded dictionary. */
+    default boolean isUnbrandedSuggestion(String suggestion) {
+        return false;
+    }
 }

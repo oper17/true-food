@@ -17,6 +17,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.example.dirtyingredients.AlternateRanker;
+import com.example.dirtyingredients.AnalyticsTracker;
 import com.example.dirtyingredients.FlaggedIngredientManager;
 import com.example.dirtyingredients.model.ProductResult;
 import com.example.dirtyingredients.util.StringNormalizer;
@@ -93,6 +94,7 @@ public class AlternatesCardController {
         if (organicButton != null) {
             organicButton.setOnClickListener(v -> {
                 preferOrganic = !preferOrganic;
+                AnalyticsTracker.preferOrganicToggled(preferOrganic);
                 rerank();
             });
         }
@@ -130,6 +132,11 @@ public class AlternatesCardController {
      */
     public void show(String foodType, boolean categoryIntent, boolean isClean,
                      Set<String> flaggedCategories) {
+        showInternal(foodType, categoryIntent, isClean, flaggedCategories, false);
+    }
+
+    private void showInternal(String foodType, boolean categoryIntent, boolean isClean,
+                              Set<String> flaggedCategories, boolean isRerank) {
         // Stash the context so the prefer-organic toggle can re-rank without a new search.
         currentFoodType = foodType;
         currentCategoryIntent = categoryIntent;
@@ -150,6 +157,11 @@ public class AlternatesCardController {
 
                 bindStack(exactPanel, exactTitle, exactText, "Exact matches", exactRanked);
                 bindStack(morePanel, moreTitle, moreText, "More clean options", moreRanked);
+
+                if (!isRerank) {
+                    AnalyticsTracker.alternatesViewed(
+                            exactRanked.size(), moreRanked.size(), preferOrganic);
+                }
 
                 // The prefer-organic toggle appears when any clean alternative in the
                 // full scanned pool has an organic ingredient — not just the displayed
@@ -203,8 +215,8 @@ public class AlternatesCardController {
      */
     private void rerank() {
         updateOrganicButton();
-        show(currentFoodType, currentCategoryIntent, currentAlternatesClean,
-                currentFlaggedCategories);
+        showInternal(currentFoodType, currentCategoryIntent, currentAlternatesClean,
+                currentFlaggedCategories, true);
     }
 
     /** Splits the pool into the exact-match stack and the rest. */
@@ -373,11 +385,15 @@ public class AlternatesCardController {
         messageView.setPadding(48, 32, 48, 16);
         messageView.setLineSpacing(1.2f, 1.1f);
 
+        AnalyticsTracker.alternateIngredientsViewed();
         new AlertDialog.Builder(activity)
                 .setTitle(titleText)
                 .setView(messageView)
                 .setPositiveButton("Close", null)
-                .setNeutralButton("BUY!", (dialog, which) -> buyListener.onBuy(altProduct))
+                .setNeutralButton("BUY!", (dialog, which) -> {
+                    AnalyticsTracker.buyTapped("alternate");
+                    buyListener.onBuy(altProduct);
+                })
                 .show();
     }
 }
