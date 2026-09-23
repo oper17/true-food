@@ -1,4 +1,4 @@
-package com.example.dirtyingredients.model;
+package com.example.barelabel.model;
 
 /** How closely a USDA hit matched the user's query. */
 public enum MatchQuality {

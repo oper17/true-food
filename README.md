@@ -1,4 +1,4 @@
-# TrueFood — Android app
+# BareLabel — Android app
 
 Screen packaged-food ingredients against *your* flagged-ingredient list, and get
 ranked clean alternatives. Product data comes from

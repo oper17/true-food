@@ -1,4 +1,4 @@
-package com.example.dirtyingredients.ui;
+package com.example.barelabel.ui;
 
 import android.content.Context;
 import android.graphics.Color;
@@ -17,12 +17,12 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
 
-import com.example.dirtyingredients.AlternateRanker;
-import com.example.dirtyingredients.AnalyticsTracker;
-import com.example.dirtyingredients.FlaggedIngredientManager;
-import com.example.dirtyingredients.R;
-import com.example.dirtyingredients.model.ProductResult;
-import com.example.dirtyingredients.util.StringNormalizer;
+import com.example.barelabel.AlternateRanker;
+import com.example.barelabel.AnalyticsTracker;
+import com.example.barelabel.FlaggedIngredientManager;
+import com.example.barelabel.R;
+import com.example.barelabel.model.ProductResult;
+import com.example.barelabel.util.StringNormalizer;
 
 import java.util.ArrayList;
 import java.util.HashSet;

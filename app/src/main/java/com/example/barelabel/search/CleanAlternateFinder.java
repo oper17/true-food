@@ -1,13 +1,13 @@
-package com.example.dirtyingredients.search;
+package com.example.barelabel.search;
 
 import android.content.Context;
 import android.text.TextUtils;
 
-import com.example.dirtyingredients.FlaggedIngredientManager;
-import com.example.dirtyingredients.model.AlternateSearchResult;
-import com.example.dirtyingredients.model.ProductResult;
-import com.example.dirtyingredients.network.UsdaApiClient;
-import com.example.dirtyingredients.util.StringNormalizer;
+import com.example.barelabel.FlaggedIngredientManager;
+import com.example.barelabel.model.AlternateSearchResult;
+import com.example.barelabel.model.ProductResult;
+import com.example.barelabel.network.UsdaApiClient;
+import com.example.barelabel.util.StringNormalizer;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

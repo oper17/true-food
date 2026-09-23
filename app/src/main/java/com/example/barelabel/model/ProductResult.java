@@ -1,6 +1,6 @@
-package com.example.dirtyingredients.model;
+package com.example.barelabel.model;
 
-import com.example.dirtyingredients.FlaggedIngredientManager;
+import com.example.barelabel.FlaggedIngredientManager;
 
 import java.util.HashSet;
 import java.util.List;

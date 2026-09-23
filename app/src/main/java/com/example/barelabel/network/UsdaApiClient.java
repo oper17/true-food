@@ -1,12 +1,12 @@
-package com.example.dirtyingredients.network;
+package com.example.barelabel.network;
 
 import android.content.Context;
 import android.text.TextUtils;
 
-import com.example.dirtyingredients.BuildConfig;
-import com.example.dirtyingredients.FlaggedIngredientManager;
-import com.example.dirtyingredients.UsdaResponseCache;
-import com.example.dirtyingredients.model.ProductResult;
+import com.example.barelabel.BuildConfig;
+import com.example.barelabel.FlaggedIngredientManager;
+import com.example.barelabel.UsdaResponseCache;
+import com.example.barelabel.model.ProductResult;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -30,7 +30,7 @@ public class UsdaApiClient {
 
     private static final String BASE_URL = "https://api.nal.usda.gov/fdc/v1/foods/search";
     private static final String USER_AGENT =
-            "DirtyIngredients/1.0 (Android food ingredient screening app)";
+            "BareLabel/1.0 (Android food ingredient screening app)";
 
     private final Context appContext;
 

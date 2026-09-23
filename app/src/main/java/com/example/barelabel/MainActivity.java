@@ -1,4 +1,4 @@
-package com.example.dirtyingredients;
+package com.example.barelabel;
 
 import android.content.Intent;
 import android.graphics.Color;
@@ -49,13 +49,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
-import com.example.dirtyingredients.model.AlternateSearchResult;
-import com.example.dirtyingredients.model.ProductResult;
-import com.example.dirtyingredients.network.UsdaApiClient;
-import com.example.dirtyingredients.FlaggedIngredientManager;
-import com.example.dirtyingredients.search.CleanAlternateFinder;
-import com.example.dirtyingredients.ui.AlternatesCardController;
-import com.example.dirtyingredients.util.StringNormalizer;
+import com.example.barelabel.model.AlternateSearchResult;
+import com.example.barelabel.model.ProductResult;
+import com.example.barelabel.network.UsdaApiClient;
+import com.example.barelabel.FlaggedIngredientManager;
+import com.example.barelabel.search.CleanAlternateFinder;
+import com.example.barelabel.ui.AlternatesCardController;
+import com.example.barelabel.util.StringNormalizer;
 
 import android.view.ViewGroup;
 import android.widget.CheckBox;
@@ -121,7 +121,7 @@ protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
 
-    setTitle("TrueFood");
+    setTitle("BareLabel");
 
     AnalyticsTracker.init(this);
 

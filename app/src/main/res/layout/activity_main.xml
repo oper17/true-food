@@ -45,13 +45,13 @@
                         android:layout_width="36dp"
                         android:layout_height="36dp"
                         android:layout_marginEnd="10dp"
-                        android:contentDescription="TrueFood"
+                        android:contentDescription="BareLabel"
                         android:src="@mipmap/ic_launcher" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="TrueFood"
+                        android:text="BareLabel"
                         android:textColor="#111827"
                         android:textSize="26sp"
                         android:textStyle="bold" />

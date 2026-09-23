@@ -1,4 +1,4 @@
-package com.example.dirtyingredients.util;
+package com.example.barelabel.util;
 
 import java.util.HashSet;
 import java.util.Locale;

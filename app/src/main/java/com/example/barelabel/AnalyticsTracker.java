@@ -1,4 +1,4 @@
-package com.example.dirtyingredients;
+package com.example.barelabel;
 
 import android.content.Context;
 import android.os.Bundle;

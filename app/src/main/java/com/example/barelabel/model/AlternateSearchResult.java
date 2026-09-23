@@ -1,4 +1,4 @@
-package com.example.dirtyingredients.model;
+package com.example.barelabel.model;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;

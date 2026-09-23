@@ -1,9 +1,9 @@
-package com.example.dirtyingredients;
+package com.example.barelabel;
 
 import android.net.Uri;
 import android.text.TextUtils;
 
-import com.example.dirtyingredients.model.ProductResult;
+import com.example.barelabel.model.ProductResult;
 
 import java.util.Locale;
 
