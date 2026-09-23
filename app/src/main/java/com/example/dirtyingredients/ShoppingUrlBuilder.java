@@ -5,6 +5,8 @@ import android.text.TextUtils;
 
 import com.example.dirtyingredients.model.ProductResult;
 
+import java.util.Locale;
+
 /**
  * Builds Google Shopping URLs for the BUY flow.
  *
@@ -16,10 +18,17 @@ public final class ShoppingUrlBuilder {
     private ShoppingUrlBuilder() {
     }
 
-    /** Shopping URL for a product, by its name/description. */
+    /** Shopping URL for a product: name/description plus brand owner. */
     public static String buildProductUrl(ProductResult product) {
-        String name = product != null ? product.name : "";
-        return buildSearchUrl(cleanName(name));
+        if (product == null) return buildSearchUrl("");
+        String query = cleanName(product.name);
+        String owner = cleanName(!TextUtils.isEmpty(product.brandOwner)
+                ? product.brandOwner : product.brand);
+        if (!owner.isEmpty()
+                && !query.toLowerCase(Locale.US).contains(owner.toLowerCase(Locale.US))) {
+            query = (query + " " + owner).trim();
+        }
+        return buildSearchUrl(query);
     }
 
     /** Google Shopping tab search for a raw query (product name/description). */
@@ -39,12 +48,14 @@ public final class ShoppingUrlBuilder {
 
     /**
      * Light cleanup of USDA descriptions for shopping search: drop
-     * manufacturer parentheticals like "(Post Consumer Brands, LLC)" and
-     * collapse whitespace. Keeps the descriptive content intact.
+     * manufacturer parentheticals like "(Post Consumer Brands, LLC)",
+     * strip corporate suffixes like ", LLC", and collapse whitespace.
+     * Keeps the descriptive content intact.
      */
     private static String cleanName(String name) {
         if (TextUtils.isEmpty(name)) return "";
         String cleaned = name.replaceAll("\\([^)]*\\)", " ")
+                .replaceAll("(?i),?\\s+\\b(llc|inc|ltd|co|corp|corporation|company)\\.?$", "")
                 .replaceAll("\\s+", " ")
                 .trim();
         return cleaned.isEmpty() ? name.trim() : cleaned;
