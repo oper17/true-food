@@ -8,25 +8,21 @@ import com.example.dirtyingredients.model.ProductResult;
 /**
  * Builds Google Shopping URLs for the BUY flow.
  *
- * GTIN is Google's canonical product identifier: searching the shopping tab by
- * GTIN resolves the exact item (with price comparisons across merchants)
- * instead of a fuzzy text search. Falls back to the product name when USDA has
- * no GTIN for the item.
+ * Searches the shopping tab by product name/description. (GTIN lookup was
+ * tried first, but Google restricts raw barcode-number queries on the
+ * shopping vertical, so name search is the reliable path.)
  */
 public final class ShoppingUrlBuilder {
     private ShoppingUrlBuilder() {
     }
 
-    /** Shopping URL for a product: GTIN when available, product name otherwise. */
+    /** Shopping URL for a product, by its name/description. */
     public static String buildProductUrl(ProductResult product) {
-        if (product != null && !TextUtils.isEmpty(product.gtinUpc)) {
-            return buildSearchUrl(product.gtinUpc.trim());
-        }
         String name = product != null ? product.name : "";
-        return buildSearchUrl(name);
+        return buildSearchUrl(cleanName(name));
     }
 
-    /** Google Shopping tab search for a raw query (name or GTIN). */
+    /** Google Shopping tab search for a raw query (product name/description). */
     public static String buildSearchUrl(String query) {
         if (query == null || query.trim().isEmpty()) {
             return "https://www.google.com/search?tbm=shop";
@@ -39,5 +35,18 @@ public final class ShoppingUrlBuilder {
                 .appendQueryParameter("q", query.trim())
                 .build()
                 .toString();
+    }
+
+    /**
+     * Light cleanup of USDA descriptions for shopping search: drop
+     * manufacturer parentheticals like "(Post Consumer Brands, LLC)" and
+     * collapse whitespace. Keeps the descriptive content intact.
+     */
+    private static String cleanName(String name) {
+        if (TextUtils.isEmpty(name)) return "";
+        String cleaned = name.replaceAll("\\([^)]*\\)", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return cleaned.isEmpty() ? name.trim() : cleaned;
     }
 }
