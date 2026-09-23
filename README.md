@@ -1,39 +1,65 @@
-# Dirty Ingredients — AndroidIDE project
+# TrueFood — Android app
 
-## What changed
-This version no longer requires Google API credentials. It uses Open Food Facts for product lookup and ingredient data.
+Screen packaged-food ingredients against *your* flagged-ingredient list, and get
+ranked clean alternatives. Product data comes from
+[USDA FoodData Central](https://fdc.nal.usda.gov/).
 
-The app:
-1. Loads `app/src/main/assets/flagged_ingredients.txt` into a HashSet at startup.
-2. Searches Open Food Facts asynchronously for the entered product name.
-3. Selects a matching result that has ingredient data when possible.
-4. Checks the actual returned ingredient list against the HashSet.
-5. Shows CLEAN, DIRTY, PRODUCT NOT FOUND, or INGREDIENTS UNAVAILABLE.
+## What it does
 
-## Build in AndroidIDE
-1. Open/import this project.
-2. Let Gradle sync.
-3. Build the `app` module.
-4. Install the generated debug APK.
+1. **Branded product check** — Type a product name (or scan its barcode) and the
+   app looks it up in USDA FoodData Central (`dataType=Branded`), pulls the
+   ingredient list, and flags matches against the categories in
+   `app/src/main/assets/flagged_ingredients.json`. Verdicts: **CLEAN**,
+   **DIRTY** (flagged ingredients grouped by category), **PRODUCT NOT FOUND**,
+   or **INGREDIENTS UNAVAILABLE**. A missing product is never treated as clean.
+2. **Your flagged list** — Toggle whole flagged-ingredient categories on/off in
+   the "Filter Flagged Categories" panel; choices persist across launches. Only
+   enabled categories are checked.
+3. **Clean alternates** — When a product is dirty, the app finds its USDA
+   `foodCategory` (rule-based classifier as fallback), searches that category,
+   drops every flagged item, and ranks the clean ones (superior-ingredient
+   count, then fewest ingredients). Up to 5 are shown with star ratings; tapping
+   one shows its ingredients and a Walmart search link.
+4. **Unbranded category search, no toggle** — If your query doesn't name the
+   matched product's brand (e.g. "peanut butter" vs "jif peanut butter"), the
+   app treats it as a category search and always shows clean choices for that
+   category, even when the top hit is clean.
+5. **Barcode scanning** — On-device ML Kit barcode scanning (CameraX). The
+   scanned GTIN is matched exactly against USDA's `gtinUpc` field (trying
+   as-scanned and leading-zero-stripped spellings) before falling back to a
+   keyword search.
 
-No Google API key is required.
+## Setup
 
-## Flagged ingredients
-Edit:
-`app/src/main/assets/flagged_ingredients.txt`
+The app needs a free USDA FoodData Central API key
+([get one here](https://api.nal.usda.gov)). Add it to a `local.properties`
+file in the project root (this file is git-ignored):
 
-One normalized term per line.
+```properties
+USDA_API_KEY=your_key_here
+```
 
-## Important data-quality behavior
-A missing product is NOT treated as clean. The app explicitly says that it cannot determine the verdict when no verified ingredient list is available.
+Gradle injects it into `BuildConfig.USDA_API_KEY` at build time.
 
-## Current lookup
-The app uses Open Food Facts keyword search for name-based lookup. Open Food Facts documents API v3 as its current API, while noting that full-text search is not currently available in v2/v3 and the legacy v1 search endpoint supports keyword search. For a production version, a barcode scanner using the current product endpoint is preferable because barcode lookup is deterministic.
+## Build
 
-Open Food Facts also requests a descriptive User-Agent for API calls, which this app supplies.
+```bash
+./gradlew assembleDebug
+```
 
-## AndroidIDE Gradle launcher
-This project includes `gradlew`. In AndroidIDE Terminal, from the project root, run:
-`./gradlew assembleDebug`
+In AndroidIDE, open/import the project, let Gradle sync, and build the `app`
+module.
 
-The launcher delegates to AndroidIDE's installed Gradle and automatically supplies AndroidIDE's aapt2 override when `$HOME/.androidide/aapt2` exists.
+## Data files
+
+- `app/src/main/assets/flagged_ingredients.json` — flagged-ingredient
+  categories. Each category has `default_enabled` and an `ingredients` list.
+  Matching is word-boundary based to avoid substring false positives.
+- `app/src/main/assets/superior_ingredients.txt` — "superior" sourcing/quality
+  terms (organic, grass-fed, …) used for ranking and ★★★ badges.
+
+## Notes
+
+- USDA search responses are cached on-device with a 7-day TTL
+  (`UsdaResponseCache`).
+- Informational tool — always verify the package label before consumption.
