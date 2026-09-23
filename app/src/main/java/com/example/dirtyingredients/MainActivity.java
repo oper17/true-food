@@ -191,23 +191,14 @@ setupCategoryFilterPanel();
      */
     private boolean isCategorySearch(String query, ProductResult product) {
         if (TextUtils.isEmpty(query) || product == null || !product.found) return false;
-        Set<String> brandTokens = wordTokens(product.brandName + " " + product.brandOwner);
+        Set<String> brandTokens = StringNormalizer.wordTokens(product.brandName + " " + product.brandOwner);
         if (brandTokens.isEmpty()) return false;
-        for (String token : wordTokens(query)) {
+        for (String token : StringNormalizer.wordTokens(query)) {
             if (token.length() >= 4 && brandTokens.contains(token)) {
                 return false; // query names the brand -> branded product search
             }
         }
         return true;
-    }
-
-    private Set<String> wordTokens(String text) {
-        Set<String> tokens = new HashSet<>();
-        if (TextUtils.isEmpty(text)) return tokens;
-        for (String t : text.toLowerCase(Locale.US).split("[^a-z0-9]+")) {
-            if (!t.isEmpty()) tokens.add(t);
-        }
-        return tokens;
     }
 
     private void search() {
@@ -246,23 +237,14 @@ setupCategoryFilterPanel();
                 AlternateSearchResult altSearch = alternateFinder.findCleanAlternates(
                         foodType, apiCategory, categoryIntent, primaryResult);
                 List<ProductResult> rawAlternates = altSearch.alternates;
-                alternatesController.setPool(rawAlternates);
+                alternatesController.setPool(rawAlternates, StringNormalizer.wordTokens(product));
 
-                // 5. Rank candidates and drop flagged items (Rank = Infinity)
-                List<AlternateRanker.RankedProduct> rankedAlternates = AlternateRanker.rankAndFilter(rawAlternates, superiorTerms);
-
-                // 6. Cap at top 5 ranked clean items
-                if (rankedAlternates.size() > 5) {
-                    rankedAlternates = rankedAlternates.subList(0, 5);
-                }
-
-                // 7. Send to UI
+                // 5. Send to UI (the controller ranks each stack itself)
                 final String finalCategory = foodType;
                 final boolean finalCategoryIntent = categoryIntent;
-                final List<AlternateRanker.RankedProduct> finalRanked = rankedAlternates;
                 final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
                 runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
-                        finalRanked, finalFlaggedCategories));
+                        finalFlaggedCategories));
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -302,14 +284,13 @@ setupCategoryFilterPanel();
 
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
-                            List<AlternateRanker.RankedProduct> alternates,
                             Set<String> flaggedCategories) {
     // Unbranded category search (e.g. "cookies"): the top hit is just one random
     // branded product in the category, not what the user asked about, so hide the
     // primary verdict card and show only the clean-choices card.
     if (categoryIntent) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
-        alternatesController.show(foodType, true, true, alternates, flaggedCategories);
+        alternatesController.show(foodType, true, true, flaggedCategories);
         return;
     }
 
@@ -444,7 +425,7 @@ setupCategoryFilterPanel();
     }
 
     // 3. Clean Alternates Section
-    alternatesController.show(foodType, categoryIntent, isClean, alternates, flaggedCategories);
+    alternatesController.show(foodType, categoryIntent, isClean, flaggedCategories);
 }
 
 /**
