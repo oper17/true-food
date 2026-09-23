@@ -6,10 +6,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
-import android.text.TextPaint;
 import android.text.TextUtils;
-import android.text.method.LinkMovementMethod;
-import android.text.style.ClickableSpan;
 import android.view.View;
 import android.view.inputmethod.EditorInfo;
 import android.widget.Button;
@@ -25,38 +22,35 @@ import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 
 
-import java.util.Map;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.browser.customtabs.CustomTabColorSchemeParams;
 import androidx.browser.customtabs.CustomTabsIntent;
 import androidx.core.content.ContextCompat;
 
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
-import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import com.example.dirtyingredients.model.AlternateSearchResult;
+import com.example.dirtyingredients.model.ProductResult;
+import com.example.dirtyingredients.network.UsdaApiClient;
+import com.example.dirtyingredients.search.CleanAlternateFinder;
+import com.example.dirtyingredients.ui.AlternatesCardController;
+import com.example.dirtyingredients.util.StringNormalizer;
+
 import android.view.ViewGroup;
 import android.widget.CheckBox;
-import java.util.Arrays;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -70,10 +64,6 @@ public class MainActivity extends AppCompatActivity {
 
     // Separate Panels & Expandable Ingredients
     private View ingredientsCard;
-    private View alternatesCard;
-    private TextView alternatesTitle;
-    private TextView alternatesText;
-    private Button preferOrganicButton;
     private TextView toggleIngredientsButton;
     private TextView productTitleText;
     private TextView matchNoticeText;
@@ -81,14 +71,10 @@ public class MainActivity extends AppCompatActivity {
 
     private boolean isIngredientsExpanded = false;
 
-    // Prefer-organic toggle state + the last search's alternates context,
-    // so toggling re-ranks without a new network request.
-    private boolean preferOrganic = false;
-    private List<ProductResult> currentCleanAlternates = new ArrayList<>();
-    private String currentFoodType = "";
-    private boolean currentCategoryIntent = false;
-    private boolean currentAlternatesClean = true;
-    private Set<String> currentFlaggedCategories = new LinkedHashSet<>();
+    // Collaborators: USDA network, clean-alternate search, and the alternates card UI.
+    private UsdaApiClient usdaApiClient;
+    private CleanAlternateFinder alternateFinder;
+    private AlternatesCardController alternatesController;
 
     private final Set<String> superiorTerms = new HashSet<>();
 
@@ -113,13 +99,20 @@ protected void onCreate(Bundle savedInstanceState) {
     // 1. Bind UI Components
     bindViews();
 
-    // 2. Enable Clickable Span Links on Alternates Text
-    if (alternatesText != null) {
-        alternatesText.setMovementMethod(LinkMovementMethod.getInstance());
-    }
-
-    // 3. Load Superior Terms Engine Set
+    // 2. Load Superior Terms Engine Set
     loadSuperiorTerms();
+
+    // 3. Collaborators: USDA client, alternate search, alternates card UI.
+    usdaApiClient = new UsdaApiClient(this);
+    alternateFinder = new CleanAlternateFinder(this, usdaApiClient);
+    alternatesController = new AlternatesCardController(
+            this,
+            findViewById(R.id.alternatesCard),
+            findViewById(R.id.alternatesTitle),
+            findViewById(R.id.alternatesText),
+            findViewById(R.id.preferOrganicButton),
+            productName -> openWalmartSearch(productName));
+    alternatesController.setSuperiorTerms(superiorTerms);
 
     // 4. Setup Barcode Scanner Button
     ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
@@ -169,16 +162,6 @@ setupCategoryFilterPanel();
         matchNoticeText = findViewById(R.id.matchNoticeText);
 
         ingredientsCard = findViewById(R.id.ingredientsCard);
-        alternatesCard = findViewById(R.id.alternatesCard);
-        alternatesTitle = findViewById(R.id.alternatesTitle);
-        alternatesText = findViewById(R.id.alternatesText);
-        preferOrganicButton = findViewById(R.id.preferOrganicButton);
-        if (preferOrganicButton != null) {
-            preferOrganicButton.setOnClickListener(v -> {
-                preferOrganic = !preferOrganic;
-                rerankAlternates();
-            });
-        }
         toggleIngredientsButton = findViewById(R.id.toggleIngredientsButton);
 		categoryCheckboxContainer = findViewById(R.id.categoryCheckboxContainer);
     }
@@ -188,7 +171,7 @@ setupCategoryFilterPanel();
                 new InputStreamReader(getAssets().open("superior_ingredients.txt")))) {
             String line;
             while ((line = br.readLine()) != null) {
-                line = normalize(line);
+                line = StringNormalizer.normalize(line);
                 if (!line.isEmpty() && !line.startsWith("#")) {
                     superiorTerms.add(line);
                 }
@@ -198,12 +181,6 @@ setupCategoryFilterPanel();
         }
     }
 
-
-    private String normalize(String s) {
-        return s.toLowerCase(Locale.US)
-                .replaceAll("[^a-z0-9% -]", " ")
-                .replaceAll("\\s+", " ").trim();
-    }
 
     /**
      * Decides whether a query is an unbranded category search (e.g. "peanut butter")
@@ -243,14 +220,14 @@ setupCategoryFilterPanel();
         progress.setVisibility(ProgressBar.VISIBLE);
         searchButton.setEnabled(false);
         resultCard.setVisibility(LinearLayout.GONE);
-        preferOrganic = false;
+        alternatesController.resetToggle();
         statusText.setText("Searching USDA FoodData Central…");
         ingredientsText.setText("");
 
         new Thread(() -> {
             try {
                 // 1. Fetch primary product
-                ProductResult primaryResult = searchUSDA3(product);
+                ProductResult primaryResult = usdaApiClient.searchPrimary(product);
 
                 // 2. Category: prefer the USDA API's own foodCategory for this product;
                 //    fall back to the rule-based classifier only when the API has none.
@@ -266,10 +243,10 @@ setupCategoryFilterPanel();
                 boolean categoryIntent = isCategorySearch(product, primaryResult);
 
                 // 4. Fetch clean candidates (+ which flagged categories blocked the rest)
-                AlternateSearchResult altSearch =
-                        searchUSDAAlternates(foodType, apiCategory, categoryIntent, primaryResult);
+                AlternateSearchResult altSearch = alternateFinder.findCleanAlternates(
+                        foodType, apiCategory, categoryIntent, primaryResult);
                 List<ProductResult> rawAlternates = altSearch.alternates;
-                currentCleanAlternates = new ArrayList<>(rawAlternates);
+                alternatesController.setPool(rawAlternates);
 
                 // 5. Rank candidates and drop flagged items (Rank = Infinity)
                 List<AlternateRanker.RankedProduct> rankedAlternates = AlternateRanker.rankAndFilter(rawAlternates, superiorTerms);
@@ -301,258 +278,6 @@ setupCategoryFilterPanel();
         }).start();
     }
 
-    private ProductResult searchUSDA3(String productName) throws Exception {
-    String cacheKey = "usda_search3_" + productName.toLowerCase().trim();
-
-    // 1. Check local disk cache (7-day TTL)
-    String body = UsdaResponseCache.get(this, cacheKey);
-
-    // 2. Fetch from network if cache missed or expired
-    if (body == null) {
-        String apiKey = BuildConfig.USDA_API_KEY;
-        String q = URLEncoder.encode(productName, "UTF-8");
-
-        String url = "https://api.nal.usda.gov/fdc/v1/foods/search"
-                + "?api_key=" + apiKey
-                + "&query=" + q
-                + "&dataType=Branded"
-                + "&pageSize=10";
-
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-        try {
-            c.setConnectTimeout(10000);
-            c.setReadTimeout(15000);
-            c.setRequestMethod("GET");
-            c.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
-
-            int code = c.getResponseCode();
-            try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
-                body = readAll(is);
-            }
-
-            if (code < 200 || code >= 300) {
-                throw new IOException("HTTP " + code);
-            }
-
-            // Save valid network response to cache
-            if (!TextUtils.isEmpty(body)) {
-                UsdaResponseCache.put(this, cacheKey, body);
-            }
-        } finally {
-            c.disconnect();
-        }
-    }
-
-    if (TextUtils.isEmpty(body)) {
-        return ProductResult.notFound();
-    }
-
-    JSONObject root = new JSONObject(body);
-    JSONArray foods = root.optJSONArray("foods");
-    if (foods == null || foods.length() == 0) {
-        return ProductResult.notFound();
-    }
-
-    JSONObject chosen = null;
-    for (int i = 0; i < foods.length(); i++) {
-        JSONObject f = foods.getJSONObject(i);
-        String ingredients = f.optString("ingredients", "");
-        if (!TextUtils.isEmpty(ingredients.trim())) {
-            chosen = f;
-            break;
-        }
-    }
-    if (chosen == null) chosen = foods.getJSONObject(0);
-
-    String name = chosen.optString("description", productName);
-    String brandName = chosen.optString("brandName", "");
-    String brandOwner = chosen.optString("brandOwner", "");
-    String brand = !brandOwner.isEmpty() ? brandOwner : brandName;
-    String ingredients = chosen.optString("ingredients", "");
-
-    // Process ingredients with FlaggedIngredientManager (JSON Engine)
-    FlaggedIngredientManager.MatchResult matchResult = FlaggedIngredientManager.analyzeIngredients(this, ingredients);
-    ProductResult result = new ProductResult(true, name, brand, ingredients, matchResult);
-    // USDA's own category + identifiers for this product (verified on /foods/search)
-    result.foodCategory = chosen.optString("foodCategory", "");
-    result.gtinUpc = chosen.optString("gtinUpc", "");
-    result.brandName = brandName;
-    result.brandOwner = brandOwner;
-    return result;
-}
-
-/**
- * Result of an alternates search: the clean candidates plus the flagged
- * categories seen across scanned (dirty) candidates, so the UI can explain
- * why a category search came up empty.
- */
-static class AlternateSearchResult {
-    final List<ProductResult> alternates = new ArrayList<>();
-    final Set<String> flaggedCategories = new LinkedHashSet<>();
-}
-
-private AlternateSearchResult searchUSDAAlternates(String foodCategory, boolean filterByCategory,
-                                                   boolean categoryIntent, ProductResult primaryResult) throws Exception {
-    AlternateSearchResult result = new AlternateSearchResult();
-
-    if (!primaryResult.found
-            || primaryResult.ingredients == null
-            || primaryResult.ingredients.trim().isEmpty()
-            || foodCategory == null
-            || "Uncategorized".equalsIgnoreCase(foodCategory)) {
-        return result;
-    }
-
-    // Clean alternates are normally fetched only for dirty products; a category
-    // (unbranded) search always wants clean choices, even if the top hit is clean.
-    if (!categoryIntent && primaryResult.flagged.isEmpty()) {
-        return result;
-    }
-
-    Set<String> seenProductKeys = new HashSet<>();
-    String primaryKey = normalize(primaryResult.name) + "|" + normalize(primaryResult.brand);
-    seenProductKeys.add(primaryKey);
-
-    // Clean items can be rare in a category (e.g. almost every cookie contains
-    // wheat), so scan every page into a full clean pool instead of stopping at
-    // the first few hits: USDA sorts by relevance, not organic-ness, and
-    // organic items are a small minority that would otherwise never be seen.
-    final int pageSize = 50;
-    collectCleanAlternates(result, seenProductKeys, foodCategory,
-            filterByCategory, foodCategory, pageSize, 3);
-
-    // Organic versions exist in the database but rarely crack relevance-sorted
-    // results, so hunt for them explicitly: USDA full-text search matches
-    // "organic" against the description, ingredients, and brand.
-    collectCleanAlternates(result, seenProductKeys, foodCategory,
-            filterByCategory, "organic " + foodCategory, pageSize, 2);
-
-    return result;
-}
-
-/**
- * Pages through USDA search results for one query, adding every clean
- * (unflagged) branded product to the pool. The pool is capped to keep the
- * local ranking cheap; the UI still shows only the top-ranked few.
- */
-private void collectCleanAlternates(AlternateSearchResult result, Set<String> seenProductKeys,
-                                    String foodCategory, boolean filterByCategory,
-                                    String query, int pageSize, int maxPages) throws Exception {
-    final int maxPoolSize = 60;
-    int pageNumber = 1;
-    while (result.alternates.size() < maxPoolSize && pageNumber <= maxPages) {
-        JSONArray foods = fetchAlternatesPage(query, foodCategory, filterByCategory,
-                pageNumber, pageSize);
-        if (foods == null || foods.length() == 0) {
-            break;
-        }
-        for (int i = 0; i < foods.length(); i++) {
-            JSONObject f = foods.getJSONObject(i);
-            String name = f.optString("description", "");
-            String brand = f.optString("brandOwner", f.optString("brandName", ""));
-            String ingredients = f.optString("ingredients", "");
-
-            if (TextUtils.isEmpty(ingredients.trim())) {
-                continue;
-            }
-
-            String productKey = normalize(name) + "|" + normalize(brand);
-            if (seenProductKeys.contains(productKey)) {
-                continue;
-            }
-            seenProductKeys.add(productKey);
-
-            FlaggedIngredientManager.MatchResult matchResult =
-                    FlaggedIngredientManager.analyzeIngredients(this, ingredients);
-            if (matchResult != null && matchResult.hasMatches()) {
-                // Remember which categories blocked this candidate so the UI can
-                // explain an empty result ("everything here contains gluten…").
-                result.flaggedCategories.addAll(matchResult.categoryMap.keySet());
-                continue;
-            }
-            ProductResult altResult = new ProductResult(true, name, brand, ingredients, matchResult);
-            altResult.foodCategory = f.optString("foodCategory", "");
-            altResult.gtinUpc = f.optString("gtinUpc", "");
-            altResult.brandName = f.optString("brandName", "");
-            altResult.brandOwner = f.optString("brandOwner", "");
-            result.alternates.add(altResult);
-
-            if (result.alternates.size() >= maxPoolSize) {
-                break;
-            }
-        }
-        if (foods.length() < pageSize) {
-            break; // last page
-        }
-        pageNumber++;
-    }
-}
-
-/**
- * Fetches one page of branded products for the alternates/category lookup,
- * using the 7-day disk cache when available.
- */
-private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean filterByCategory,
-                                      int pageNumber, int pageSize) throws Exception {
-    String cacheKey = "usda_alternates_" + (filterByCategory ? "cat_" : "")
-            + query.toLowerCase().trim().replaceAll("\\s+", "_") + "_p" + pageNumber;
-
-    // 1. Check local disk cache (7-day TTL)
-    String body = UsdaResponseCache.get(this, cacheKey);
-
-    // 2. Fetch from network if cache missed or expired
-    if (body == null) {
-        String apiKey = BuildConfig.USDA_API_KEY;
-
-        HttpURLConnection c = (HttpURLConnection) new URL(
-                "https://api.nal.usda.gov/fdc/v1/foods/search?api_key=" + apiKey).openConnection();
-        try {
-            c.setConnectTimeout(10000);
-            c.setReadTimeout(15000);
-            c.setRequestMethod("POST");
-            c.setRequestProperty("Content-Type", "application/json");
-            c.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
-            c.setDoOutput(true);
-
-            JSONObject payload = new JSONObject();
-            payload.put("query", query);
-            payload.put("dataType", new JSONArray().put("Branded"));
-            payload.put("pageSize", pageSize);
-            payload.put("pageNumber", pageNumber);
-            if (filterByCategory) {
-                // Narrow results using the USDA's own category vocabulary.
-                payload.put("foodCategory", foodCategory);
-            }
-
-            try (OutputStream os = c.getOutputStream()) {
-                os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
-            }
-
-            int code = c.getResponseCode();
-            try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
-                body = readAll(is);
-            }
-
-            if (code < 200 || code >= 300) {
-                return null;
-            }
-
-            // Save valid network response to cache
-            if (!TextUtils.isEmpty(body)) {
-                UsdaResponseCache.put(this, cacheKey, body);
-            }
-        } finally {
-            c.disconnect();
-        }
-    }
-
-    if (TextUtils.isEmpty(body)) {
-        return null;
-    }
-
-    JSONObject root = new JSONObject(body);
-    return root.optJSONArray("foods");
-}
 
     private void openWalmartSearch(String foodQuery) {
         String walmartUrl = WalmartUrlBuilder.buildSearchUrl(foodQuery);
@@ -575,14 +300,6 @@ private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean
         }
     }
 
-    private String readAll(InputStream is) throws IOException {
-        BufferedReader r = new BufferedReader(new InputStreamReader(is, "UTF-8"));
-        StringBuilder b = new StringBuilder();
-        String line;
-        while ((line = r.readLine()) != null) b.append(line).append('\n');
-        r.close();
-        return b.toString();
-    }
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
                             List<AlternateRanker.RankedProduct> alternates,
@@ -592,7 +309,7 @@ private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean
     // primary verdict card and show only the clean-choices card.
     if (categoryIntent) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
-        showAlternatesCard(foodType, true, true, alternates, flaggedCategories);
+        alternatesController.show(foodType, true, true, alternates, flaggedCategories);
         return;
     }
 
@@ -631,7 +348,7 @@ private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         if (flaggedText != null) flaggedText.setVisibility(View.GONE);
         if (walmartButton != null) walmartButton.setVisibility(View.GONE);
-        if (alternatesCard != null) alternatesCard.setVisibility(View.GONE);
+        alternatesController.hide();
         return;
     }
 
@@ -665,7 +382,7 @@ private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean
         if (flaggedTitle != null) flaggedTitle.setVisibility(View.GONE);
         if (flaggedText != null) flaggedText.setVisibility(View.GONE);
         if (walmartButton != null) walmartButton.setVisibility(View.GONE);
-        if (alternatesCard != null) alternatesCard.setVisibility(View.GONE);
+        alternatesController.hide();
         return;
     }
 
@@ -727,7 +444,7 @@ private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean
     }
 
     // 3. Clean Alternates Section
-    showAlternatesCard(foodType, categoryIntent, isClean, alternates, flaggedCategories);
+    alternatesController.show(foodType, categoryIntent, isClean, alternates, flaggedCategories);
 }
 
 /**
@@ -736,134 +453,6 @@ private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean
  * When a category search finds nothing, the blocking flagged categories are listed
  * so the user knows why (e.g. everything contains gluten).
  */
-private void showAlternatesCard(String foodType, boolean categoryIntent, boolean isClean,
-                                List<AlternateRanker.RankedProduct> alternates,
-                                Set<String> flaggedCategories) {
-    // Stash the context so the prefer-organic toggle can re-rank without a new search.
-    currentFoodType = foodType;
-    currentCategoryIntent = categoryIntent;
-    currentAlternatesClean = isClean;
-    currentFlaggedCategories = flaggedCategories != null ? flaggedCategories : new LinkedHashSet<>();
-
-    if (alternatesCard != null && alternatesTitle != null && alternatesText != null) {
-        String alternatesHeading = (categoryIntent && !TextUtils.isEmpty(foodType))
-                ? "Clean choices in " + foodType
-                : "Clean Alternates";
-        if (alternates != null && !alternates.isEmpty()) {
-            alternatesCard.setVisibility(View.VISIBLE);
-            alternatesTitle.setText(alternatesHeading);
-
-            SpannableStringBuilder spannableBuilder = new SpannableStringBuilder();
-
-            for (int i = 0; i < alternates.size(); i++) {
-                AlternateRanker.RankedProduct item = alternates.get(i);
-                ProductResult alt = item.product;
-
-                int startPos = spannableBuilder.length();
-
-                // Little attention-drawing icons: herb for organic picks,
-                // butterfly (Non-GMO Project mark) for non-GMO picks.
-                String itemHeader = "";
-                if (item.hasOrganic) itemHeader += "🌿 "; // U+1F33F
-                if (item.nonGmo) itemHeader += "🦋 "; // U+1F98B
-                itemHeader += item.getStarRating() + " " + alt.name;
-                if (!TextUtils.isEmpty(alt.brand)) {
-                    itemHeader += " (" + alt.brand + ")";
-                }
-                itemHeader += "\n   ✓ Clean • " + item.ingredientCount + " ingredients";
-                if (preferOrganic) {
-                    itemHeader += item.getOrganicTag();
-                } else if (item.superiorCount > 0) {
-                    itemHeader += " • " + item.superiorCount + " superior badge(s)";
-                }
-                itemHeader += "\n\n";
-
-                spannableBuilder.append(itemHeader);
-                int endPos = spannableBuilder.length();
-
-                final ProductResult currentAlt = alt;
-                spannableBuilder.setSpan(new ClickableSpan() {
-                    @Override
-                    public void onClick(@NonNull View widget) {
-                        showAlternateIngredientsDialog(currentAlt);
-                    }
-
-                    @Override
-                    public void updateDrawState(@NonNull TextPaint ds) {
-                        super.updateDrawState(ds);
-                        ds.setUnderlineText(false);
-                        ds.setColor(Color.parseColor("#166534"));
-                    }
-                }, startPos, endPos, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            }
-
-            alternatesText.setText(spannableBuilder);
-            alternatesText.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
-
-            // The prefer-organic toggle appears when any clean alternative in the
-            // full scanned pool has an organic ingredient — not just the five
-            // displayed — so organic versions stay discoverable even when they
-            // don't crack the default top-5 ranking. Tapping it re-ranks the
-            // whole pool, bringing the organic picks to the top.
-            boolean anyOrganic = false;
-            for (ProductResult p : currentCleanAlternates) {
-                if (p != null && AlternateRanker.hasOrganicIngredient(p)) {
-                    anyOrganic = true;
-                    break;
-                }
-            }
-            if (preferOrganicButton != null) {
-                preferOrganicButton.setVisibility(anyOrganic ? View.VISIBLE : View.GONE);
-                updateOrganicButton();
-            }
-        } else {
-            if (preferOrganicButton != null) {
-                preferOrganicButton.setVisibility(View.GONE);
-            }
-            // Dirty product with no clean options, or a category search with no
-            // clean choices found: say so explicitly instead of hiding the card.
-            if (!isClean || categoryIntent) {
-                alternatesCard.setVisibility(View.VISIBLE);
-                alternatesTitle.setText(alternatesHeading);
-                if (categoryIntent && flaggedCategories != null && !flaggedCategories.isEmpty()
-                        && !TextUtils.isEmpty(foodType)) {
-                    alternatesText.setText("All items in " + foodType
-                            + " have the following flagged categories: "
-                            + TextUtils.join(", ", flaggedCategories)
-                            + ".\nConsider relaxing your search.");
-                } else {
-                    alternatesText.setText(categoryIntent
-                            ? "No clean choices were found for this category in the database."
-                            : "No clean alternatives were found for this item in the database.");
-                }
-            } else {
-                // If the product itself is clean, hide the alternates card
-                alternatesCard.setVisibility(View.GONE);
-            }
-        }
-    }
-}
-
-/**
- * Re-ranks the current clean alternates with the prefer-organic toggle state
- * and re-binds the alternates card. No network request needed.
- */
-private void rerankAlternates() {
-    List<AlternateRanker.RankedProduct> reranked =
-            AlternateRanker.rankAndFilter(currentCleanAlternates, superiorTerms, preferOrganic);
-    if (reranked.size() > 5) {
-        reranked = reranked.subList(0, 5);
-    }
-    updateOrganicButton();
-    showAlternatesCard(currentFoodType, currentCategoryIntent, currentAlternatesClean,
-            reranked, currentFlaggedCategories);
-}
-
-private void updateOrganicButton() {
-    if (preferOrganicButton == null) return;
-    preferOrganicButton.setText(preferOrganic ? "\u2713 PREFER ORGANIC" : "PREFER ORGANIC");
-}
-
 
 private void showFullIngredientsDialog(ProductResult product) {
     String title = product.name;
@@ -879,71 +468,6 @@ private void showFullIngredientsDialog(ProductResult product) {
 }
 
 
-    private void showAlternateIngredientsDialog(ProductResult altProduct) {
-    if (altProduct == null) return;
-
-    String title = altProduct.name;
-    if (!TextUtils.isEmpty(altProduct.brand)) {
-        title += " (" + altProduct.brand + ")";
-    }
-
-    SpannableStringBuilder dialogContent = new SpannableStringBuilder();
-
-    // 1. Add Superior Badge Explanatory Note
-    String explanation = "Superior badges are provided when the item has one or more superior ingredients\n\n";
-    int expStart = dialogContent.length();
-    dialogContent.append(explanation);
-    
-    dialogContent.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.ITALIC), 
-            expStart, dialogContent.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-    dialogContent.setSpan(new android.text.style.ForegroundColorSpan(Color.parseColor("#4B5563")), 
-            expStart, dialogContent.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-    // 2. Ingredients Header
-    int headerStart = dialogContent.length();
-    dialogContent.append("INGREDIENTS:\n\n");
-    dialogContent.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 
-            headerStart, dialogContent.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-    // 3. Format and Highlight Superior Ingredients
-    String rawIngredients = TextUtils.isEmpty(altProduct.ingredients) 
-            ? "No ingredient list available." 
-            : altProduct.ingredients;
-
-    String[] tokens = rawIngredients.split(",");
-    for (int i = 0; i < tokens.length; i++) {
-        String token = tokens[i];
-        String trimmedToken = token.trim();
-
-        if (i > 0) dialogContent.append(", ");
-        
-        int tokenStart = dialogContent.length();
-        dialogContent.append(trimmedToken);
-        int tokenEnd = dialogContent.length();
-
-        // Highlight in green bold if the ingredient is superior
-       if (FlaggedIngredientManager.isSuperiorIngredient(this, trimmedToken)) {
-            dialogContent.setSpan(new android.text.style.ForegroundColorSpan(Color.parseColor("#15803D")), 
-                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            dialogContent.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD), 
-                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-    }
-
-    // Build TextView to support Spannable formatting
-    TextView messageView = new TextView(this);
-    messageView.setText(dialogContent);
-    messageView.setTextSize(15f);
-    messageView.setPadding(48, 32, 48, 16);
-    messageView.setLineSpacing(1.2f, 1.1f);
-
-    new AlertDialog.Builder(this)
-            .setTitle(title)
-            .setView(messageView)
-            .setPositiveButton("Close", null)
-          .setNeutralButton("BUY!", (dialog, which) -> openWalmartSearch(altProduct.name))  
-            .show();
-}
 
     private void openBarcodeScanner() {
         Intent intent = new Intent(this, BarcodeScannerActivity.class);
@@ -961,7 +485,7 @@ private void showFullIngredientsDialog(ProductResult product) {
                 // (USDA stores gtinUpc as printed, e.g. 12-digit UPC-A).
                 JSONObject match = null;
                 for (String candidate : gtinCandidates(gtin)) {
-                    match = findFoodByGtin(candidate);
+                    match = usdaApiClient.findFoodByGtin(candidate);
                     if (match != null) break;
                 }
 
@@ -1005,43 +529,6 @@ private void showFullIngredientsDialog(ProductResult product) {
      * to the first branded result with an ingredient list when no exact gtinUpc
      * match exists.
      */
-    private JSONObject findFoodByGtin(String gtin) throws Exception {
-        String urlString = "https://api.nal.usda.gov/fdc/v1/foods/search?query="
-                + URLEncoder.encode(gtin, "UTF-8")
-                + "&dataType=Branded"
-                + "&pageSize=10"
-                + "&api_key=" + BuildConfig.USDA_API_KEY;
-
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlString).openConnection();
-        try {
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(10000);
-            conn.setRequestProperty("User-Agent", "DirtyIngredients/1.0 (Android food ingredient screening app)");
-
-            if (conn.getResponseCode() != 200) return null;
-
-            JSONObject responseJson = new JSONObject(readAll(conn.getInputStream()));
-            JSONArray foods = responseJson.optJSONArray("foods");
-            if (foods == null || foods.length() == 0) return null;
-
-            String needle = gtin.replaceFirst("^0+", "");
-            JSONObject fallback = null;
-            for (int i = 0; i < foods.length(); i++) {
-                JSONObject f = foods.getJSONObject(i);
-                String stored = f.optString("gtinUpc", "").replaceFirst("^0+", "");
-                if (!stored.isEmpty() && stored.equals(needle)) {
-                    return f; // exact GTIN match
-                }
-                if (fallback == null && !f.optString("ingredients", "").trim().isEmpty()) {
-                    fallback = f;
-                }
-            }
-            return fallback;
-        } finally {
-            conn.disconnect();
-        }
-    }
 
 private void setupCategoryFilterPanel() {
     if (categoryCheckboxContainer == null) return;
@@ -1092,52 +579,4 @@ private void setupCategoryFilterPanel() {
         categoryCheckboxContainer.addView(checkBox);
     }
 }
-
-
-    public enum MatchQuality {
-        EXACT,
-        CLOSE_ENOUGH,
-        NONE
-    }
-
-    public static class ProductResult {
-    public boolean found;
-    public String name, brand, ingredients;
-    public String foodCategory = "";
-    public String gtinUpc = "";
-    public String brandName = "";
-    public String brandOwner = "";
-    public MatchQuality matchQuality;
-    public FlaggedIngredientManager.MatchResult matchResult;
-    public Set<String> flagged = new HashSet<>();
-
-    public ProductResult(boolean found, String name, String brand, String ingredients,
-                         FlaggedIngredientManager.MatchResult matchResult, MatchQuality matchQuality) {
-        this.found = found;
-        this.name = name;
-        this.brand = brand;
-        this.ingredients = ingredients;
-        this.matchResult = matchResult;
-        this.matchQuality = matchQuality;
-
-        // Reset and strictly populate only active matches
-        this.flagged.clear();
-        if (matchResult != null && matchResult.hasMatches()) {
-            for (List<String> items : matchResult.categoryMap.values()) {
-                this.flagged.addAll(items);
-            }
-        }
-    }
-
-    public ProductResult(boolean found, String name, String brand, String ingredients,
-                         FlaggedIngredientManager.MatchResult matchResult) {
-        this(found, name, brand, ingredients, matchResult, MatchQuality.NONE);
-    }
-
-    public static ProductResult notFound() {
-        return new ProductResult(false, "", "", "", new FlaggedIngredientManager.MatchResult(), MatchQuality.NONE);
-    }
-}
-
-
 }

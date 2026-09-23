@@ -1,5 +1,7 @@
 package com.example.dirtyingredients;
 
+import com.example.dirtyingredients.model.ProductResult;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -15,13 +17,13 @@ public class AlternateRanker {
             Pattern.compile("\\bnon[\\s-]*gmo\\b", Pattern.CASE_INSENSITIVE);
 
     /** True when at least one ingredient is labeled organic (e.g. "ORGANIC CANE SUGAR"). */
-    public static boolean hasOrganicIngredient(MainActivity.ProductResult item) {
+    public static boolean hasOrganicIngredient(ProductResult item) {
         return item != null && item.ingredients != null
                 && ORGANIC_PATTERN.matcher(item.ingredients).find();
     }
 
     /** True when the product is labeled non-GMO (name or ingredients). */
-    public static boolean isNonGmo(MainActivity.ProductResult item) {
+    public static boolean isNonGmo(ProductResult item) {
         if (item == null) return false;
         String text = (item.name == null ? "" : item.name) + " "
                 + (item.ingredients == null ? "" : item.ingredients);
@@ -29,7 +31,7 @@ public class AlternateRanker {
     }
 
     public static class RankedProduct {
-        public final MainActivity.ProductResult product;
+        public final ProductResult product;
         public final int rank;
         public final int ingredientCount;
         public final int superiorCount;
@@ -37,7 +39,7 @@ public class AlternateRanker {
         public final boolean nonGmo;
         private final boolean preferOrganic;
 
-        public RankedProduct(MainActivity.ProductResult product, int rank, int ingredientCount,
+        public RankedProduct(ProductResult product, int rank, int ingredientCount,
                              int superiorCount, boolean hasOrganic, boolean nonGmo,
                              boolean preferOrganic) {
             this.product = product;
@@ -83,7 +85,7 @@ public class AlternateRanker {
      * using ingredient count and superior ingredient bonuses.
      */
     public static List<RankedProduct> rankAndFilter(
-            List<MainActivity.ProductResult> rawAlternates,
+            List<ProductResult> rawAlternates,
             Set<String> superiorTerms) {
         return rankAndFilter(rawAlternates, superiorTerms, false);
     }
@@ -94,14 +96,14 @@ public class AlternateRanker {
      * then the rest — with superior count and ingredient count as tiebreakers.
      */
     public static List<RankedProduct> rankAndFilter(
-            List<MainActivity.ProductResult> rawAlternates,
+            List<ProductResult> rawAlternates,
             Set<String> superiorTerms,
             boolean preferOrganic) {
 
-        List<MainActivity.ProductResult> cleanOnly = new ArrayList<>();
+        List<ProductResult> cleanOnly = new ArrayList<>();
 
         // 1. Filter out flagged items
-        for (MainActivity.ProductResult item : rawAlternates) {
+        for (ProductResult item : rawAlternates) {
             if (item.flagged == null || item.flagged.isEmpty()) {
                 cleanOnly.add(item);
             }
@@ -147,12 +149,12 @@ public class AlternateRanker {
         int currentRank = 1;
 
         for (int i = 0; i < cleanOnly.size(); i++) {
-            MainActivity.ProductResult item = cleanOnly.get(i);
+            ProductResult item = cleanOnly.get(i);
             int ingCount = countIngredients(item);
             int supCount = countSuperiorTerms(item, superiorTerms);
 
             if (i > 0) {
-                MainActivity.ProductResult prev = cleanOnly.get(i - 1);
+                ProductResult prev = cleanOnly.get(i - 1);
                 int prevSup = countSuperiorTerms(prev, superiorTerms);
                 int prevIng = countIngredients(prev);
 
@@ -168,14 +170,14 @@ public class AlternateRanker {
         return rankedList;
     }
 
-    public static int countIngredients(MainActivity.ProductResult item) {
+    public static int countIngredients(ProductResult item) {
         if (item.ingredients == null || item.ingredients.trim().isEmpty()) {
             return Integer.MAX_VALUE;
         }
         return item.ingredients.split(",").length;
     }
 
-    public static int countSuperiorTerms(MainActivity.ProductResult item, Set<String> superiorTerms) {
+    public static int countSuperiorTerms(ProductResult item, Set<String> superiorTerms) {
         if (superiorTerms == null || superiorTerms.isEmpty()) return 0;
         String text = (item.name + " " + item.ingredients).toLowerCase();
         int count = 0;
