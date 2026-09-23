@@ -10,7 +10,9 @@
 
     <application
         android:allowBackup="true"
-        android:label="TrueFood"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="BareLabel"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 

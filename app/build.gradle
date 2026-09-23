@@ -1,5 +1,6 @@
 plugins {
     id 'com.android.application'
+    id 'com.google.gms.google-services'
 }
 
 // Load properties from local.properties (git-ignored file)
@@ -10,11 +11,11 @@ if (localPropertiesFile.exists()) {
 }
 
 android {
-    namespace 'com.example.dirtyingredients'
+    namespace 'com.example.barelabel'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.example.dirtyingredients'
+        applicationId 'com.example.barelabel'
         minSdk 23
         targetSdk 35
         versionCode 1
@@ -28,6 +29,13 @@ android {
     buildFeatures {
         buildConfig true
     }
+
+    // Name the built APK true-food.apk instead of the default app-<variant>.apk
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "true-food.apk"
+        }
+    }
 }
 
 dependencies {
@@ -35,6 +43,9 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.2.0'
     implementation 'androidx.browser:browser:1.8.0'
 	implementation 'com.google.android.flexbox:flexbox:3.0.0'
+// Firebase Analytics (feature-level beaconing)
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-analytics'
 // ML Kit Barcode Scanning (Free & On-Device)
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
 

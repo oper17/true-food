@@ -182,7 +182,45 @@
       "mono- and diglycerides",
       "monoglycerides",
       "diglycerides",
-      "sodium carboxymethylcellulose"
+      "sodium carboxymethylcellulose",
+      "xanthan gum",
+      "guar gum",
+      "locust bean gum",
+      "carob bean gum",
+      "tara gum",
+      "gellan gum",
+      "gum arabic",
+      "acacia gum",
+      "tragacanth",
+      "karaya gum",
+      "konjac gum",
+      "agar",
+      "pectin",
+      "sodium alginate",
+      "propylene glycol alginate",
+      "cellulose gum",
+      "carboxymethyl cellulose",
+      "microcrystalline cellulose",
+      "methylcellulose",
+      "hydroxypropyl methylcellulose",
+      "modified food starch",
+      "modified starch",
+      "lecithin",
+      "soy lecithin",
+      "sunflower lecithin",
+      "sodium citrate",
+      "sodium phosphate",
+      "diphosphates",
+      "polyphosphates",
+      "xanthan",
+      "guar",
+      "locust bean",
+      "carob bean",
+      "tara",
+      "gellan",
+      "konjac",
+      "karaya",
+      "modified potato starch"
     ]
   },
   "Flavor Enhancers & Additives": {
@@ -193,7 +231,8 @@
       "autolyzed yeast extract",
       "disodium inosinate",
       "disodium guanylate",
-      "hydrolyzed vegetable protein"
+      "hydrolyzed vegetable protein",
+      "natural flavor"
     ]
   },
   "Fats & Hydrogenated Oils": {
@@ -204,6 +243,12 @@
       "hydrogenated soybean oil",
       "partially hydrogenated soybean oil",
       "partially hydrogenated cottonseed oil"
+    ]
+  },
+  "Processed Sweeteners & Fibers": {
+    "default_enabled": true,
+    "ingredients": [
+      "isomalto-oligosaccharide"
     ]
   }
 }
