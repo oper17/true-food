@@ -18,15 +18,20 @@ public final class ShoppingUrlBuilder {
     private ShoppingUrlBuilder() {
     }
 
-    /** Shopping URL for a product: name/description plus brand owner. */
+    /** Shopping URL for a product: name/description plus brand owner and brand name. */
     public static String buildProductUrl(ProductResult product) {
         if (product == null) return buildSearchUrl("");
         String query = cleanName(product.name);
-        String owner = cleanName(!TextUtils.isEmpty(product.brandOwner)
-                ? product.brandOwner : product.brand);
-        if (!owner.isEmpty()
-                && !query.toLowerCase(Locale.US).contains(owner.toLowerCase(Locale.US))) {
-            query = (query + " " + owner).trim();
+        String[] tags = {
+            !TextUtils.isEmpty(product.brandOwner) ? product.brandOwner : product.brand,
+            product.brandName
+        };
+        for (String tag : tags) {
+            String cleaned = cleanName(tag);
+            if (!cleaned.isEmpty()
+                    && !query.toLowerCase(Locale.US).contains(cleaned.toLowerCase(Locale.US))) {
+                query = (query + " " + cleaned).trim();
+            }
         }
         return buildSearchUrl(query);
     }
