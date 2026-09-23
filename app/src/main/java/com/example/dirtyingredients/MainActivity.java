@@ -75,6 +75,7 @@ public class MainActivity extends AppCompatActivity {
     private UsdaApiClient usdaApiClient;
     private CleanAlternateFinder alternateFinder;
     private AlternatesCardController alternatesController;
+    private FoodAutoCompleteManager autoCompleteManager;
 
     private final Set<String> superiorTerms = new HashSet<>();
 
@@ -121,8 +122,10 @@ protected void onCreate(Bundle savedInstanceState) {
     }
 setupCategoryFilterPanel();
     // 5. Attach AutoComplete Manager
-    SuggestionProvider usdaProvider = new UsdaSuggestionProvider(this);
-    FoodAutoCompleteManager autoCompleteManager = new FoodAutoCompleteManager(this, usdaProvider);
+    // Unbranded completions (offline dictionary) take rank 1-2; USDA fills the rest.
+    SuggestionProvider suggestionProvider = new CombinedSuggestionProvider(
+            new UnbrandedSuggestionProvider(this), new UsdaSuggestionProvider(this));
+    autoCompleteManager = new FoodAutoCompleteManager(this, suggestionProvider);
     autoCompleteManager.attachToEditText(searchBox);
 
     // 6. Setup Primary Retail Buy Button
@@ -202,6 +205,10 @@ setupCategoryFilterPanel();
     }
 
     private void search() {
+        // Suggestions are no longer needed once the user commits to a search.
+        if (autoCompleteManager != null) {
+            autoCompleteManager.dismissSuggestions();
+        }
         final String product = searchBox.getText().toString().trim();
         if (TextUtils.isEmpty(product)) {
             searchBox.setError("Enter a food product name");

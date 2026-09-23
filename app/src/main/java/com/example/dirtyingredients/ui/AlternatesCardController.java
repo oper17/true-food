@@ -40,8 +40,6 @@ import java.util.Set;
  */
 public class AlternatesCardController {
 
-    private static final int MAX_PER_STACK = 5;
-
     /** Called when the user taps BUY! in an alternate's ingredient dialog. */
     public interface BuyListener {
         void onBuy(ProductResult product);
@@ -237,14 +235,9 @@ public class AlternatesCardController {
         return false;
     }
 
-    /** Ranks one stack with the shared ranking logic, capped at MAX_PER_STACK. */
+    /** Ranks one stack with the shared ranking logic (no item cap — the stack scrolls). */
     private List<AlternateRanker.RankedProduct> topRanked(List<ProductResult> stack) {
-        List<AlternateRanker.RankedProduct> ranked =
-                AlternateRanker.rankAndFilter(stack, superiorTerms, preferOrganic);
-        if (ranked.size() > MAX_PER_STACK) {
-            ranked = ranked.subList(0, MAX_PER_STACK);
-        }
-        return ranked;
+        return AlternateRanker.rankAndFilter(stack, superiorTerms, preferOrganic);
     }
 
     private void hideStackPanels() {

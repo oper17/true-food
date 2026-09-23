@@ -38,7 +38,7 @@ public class FoodAutoCompleteManager {
 
     public void attachToEditText(EditText editText) {
         // 1. Initialize Adapter and ListPopupWindow tied to the EditText view
-        adapter = new ArrayAdapter<>(context, android.R.layout.simple_dropdown_item_1line, new ArrayList<>());
+        adapter = new ArrayAdapter<>(context, R.layout.item_suggestion, new ArrayList<>());
         
         popupWindow = new ListPopupWindow(context);
         popupWindow.setAdapter(adapter);
@@ -120,6 +120,8 @@ public class FoodAutoCompleteManager {
         });
     }
 
+    private static final int MAX_SUGGESTIONS = 5;
+
     private void renderSuggestions(List<String> suggestions, EditText editText) {
         // Prevent popup rendering if view lost focus or selection was made
         if (isSuppressingSuggestions || !editText.hasFocus()) {
@@ -128,14 +130,25 @@ public class FoodAutoCompleteManager {
         }
 
         if (suggestions != null && !suggestions.isEmpty()) {
+            List<String> capped = suggestions.size() > MAX_SUGGESTIONS
+                    ? suggestions.subList(0, MAX_SUGGESTIONS)
+                    : suggestions;
             adapter.clear();
-            adapter.addAll(suggestions);
+            adapter.addAll(capped);
             adapter.notifyDataSetChanged();
 
             if (!popupWindow.isShowing()) {
                 popupWindow.show();
             }
         } else {
+            popupWindow.dismiss();
+        }
+    }
+
+    /** Dismisses the suggestion popup, e.g. when the user presses search/enter. */
+    public void dismissSuggestions() {
+        cancelPendingSearch();
+        if (popupWindow != null && popupWindow.isShowing()) {
             popupWindow.dismiss();
         }
     }
