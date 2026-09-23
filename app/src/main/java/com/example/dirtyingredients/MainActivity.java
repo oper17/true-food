@@ -414,13 +414,35 @@ private AlternateSearchResult searchUSDAAlternates(String foodCategory, boolean 
     seenProductKeys.add(primaryKey);
 
     // Clean items can be rare in a category (e.g. almost every cookie contains
-    // wheat), so page through results until we have 5 clean candidates instead
-    // of judging the category by its first few hits.
+    // wheat), so scan every page into a full clean pool instead of stopping at
+    // the first few hits: USDA sorts by relevance, not organic-ness, and
+    // organic items are a small minority that would otherwise never be seen.
     final int pageSize = 50;
-    final int maxPages = 3;
+    collectCleanAlternates(result, seenProductKeys, foodCategory,
+            filterByCategory, foodCategory, pageSize, 3);
+
+    // Organic versions exist in the database but rarely crack relevance-sorted
+    // results, so hunt for them explicitly: USDA full-text search matches
+    // "organic" against the description, ingredients, and brand.
+    collectCleanAlternates(result, seenProductKeys, foodCategory,
+            filterByCategory, "organic " + foodCategory, pageSize, 2);
+
+    return result;
+}
+
+/**
+ * Pages through USDA search results for one query, adding every clean
+ * (unflagged) branded product to the pool. The pool is capped to keep the
+ * local ranking cheap; the UI still shows only the top-ranked few.
+ */
+private void collectCleanAlternates(AlternateSearchResult result, Set<String> seenProductKeys,
+                                    String foodCategory, boolean filterByCategory,
+                                    String query, int pageSize, int maxPages) throws Exception {
+    final int maxPoolSize = 60;
     int pageNumber = 1;
-    while (result.alternates.size() < 5 && pageNumber <= maxPages) {
-        JSONArray foods = fetchAlternatesPage(foodCategory, filterByCategory, pageNumber, pageSize);
+    while (result.alternates.size() < maxPoolSize && pageNumber <= maxPages) {
+        JSONArray foods = fetchAlternatesPage(query, foodCategory, filterByCategory,
+                pageNumber, pageSize);
         if (foods == null || foods.length() == 0) {
             break;
         }
@@ -455,7 +477,7 @@ private AlternateSearchResult searchUSDAAlternates(String foodCategory, boolean 
             altResult.brandOwner = f.optString("brandOwner", "");
             result.alternates.add(altResult);
 
-            if (result.alternates.size() == 5) {
+            if (result.alternates.size() >= maxPoolSize) {
                 break;
             }
         }
@@ -464,18 +486,16 @@ private AlternateSearchResult searchUSDAAlternates(String foodCategory, boolean 
         }
         pageNumber++;
     }
-
-    return result;
 }
 
 /**
  * Fetches one page of branded products for the alternates/category lookup,
  * using the 7-day disk cache when available.
  */
-private JSONArray fetchAlternatesPage(String foodCategory, boolean filterByCategory,
+private JSONArray fetchAlternatesPage(String query, String foodCategory, boolean filterByCategory,
                                       int pageNumber, int pageSize) throws Exception {
     String cacheKey = "usda_alternates_" + (filterByCategory ? "cat_" : "")
-            + foodCategory.toLowerCase().trim() + "_p" + pageNumber;
+            + query.toLowerCase().trim().replaceAll("\\s+", "_") + "_p" + pageNumber;
 
     // 1. Check local disk cache (7-day TTL)
     String body = UsdaResponseCache.get(this, cacheKey);
@@ -495,7 +515,7 @@ private JSONArray fetchAlternatesPage(String foodCategory, boolean filterByCateg
             c.setDoOutput(true);
 
             JSONObject payload = new JSONObject();
-            payload.put("query", foodCategory);
+            payload.put("query", query);
             payload.put("dataType", new JSONArray().put("Branded"));
             payload.put("pageSize", pageSize);
             payload.put("pageNumber", pageNumber);
@@ -780,11 +800,14 @@ private void showAlternatesCard(String foodType, boolean categoryIntent, boolean
             alternatesText.setText(spannableBuilder);
             alternatesText.setMovementMethod(android.text.method.LinkMovementMethod.getInstance());
 
-            // The prefer-organic toggle only appears when at least one clean
-            // alternative actually has an organic ingredient.
+            // The prefer-organic toggle appears when any clean alternative in the
+            // full scanned pool has an organic ingredient — not just the five
+            // displayed — so organic versions stay discoverable even when they
+            // don't crack the default top-5 ranking. Tapping it re-ranks the
+            // whole pool, bringing the organic picks to the top.
             boolean anyOrganic = false;
-            for (AlternateRanker.RankedProduct rp : alternates) {
-                if (rp.hasOrganic) {
+            for (ProductResult p : currentCleanAlternates) {
+                if (p != null && AlternateRanker.hasOrganicIngredient(p)) {
                     anyOrganic = true;
                     break;
                 }
