@@ -251,7 +251,8 @@ setupCategoryFilterPanel();
                 AlternateSearchResult altSearch = alternateFinder.findCleanAlternates(
                         foodType, apiCategory, categoryIntent, primaryResult);
                 List<ProductResult> rawAlternates = altSearch.alternates;
-                alternatesController.setPool(rawAlternates, StringNormalizer.wordTokens(product));
+                alternatesController.setPool(rawAlternates, StringNormalizer.wordTokens(product),
+                        categoryIntent);
 
                 // 5. Send to UI (the controller ranks each stack itself)
                 final String finalCategory = foodType;

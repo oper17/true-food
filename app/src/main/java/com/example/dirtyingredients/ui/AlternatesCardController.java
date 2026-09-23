@@ -31,8 +31,10 @@ import java.util.Set;
 /**
  * Owns the "clean alternates" card, rendered as two stacks:
  * <ul>
- *   <li><b>Exact matches</b> (green panel) — clean products whose description
- *       shares at least one query token (hard filter).</li>
+ *   <li><b>Exact matches</b> (green panel) — clean products passing the
+ *       exact-match hard filter: for non-branded searches the description must
+ *       contain ALL query tokens (any order); for branded searches any single
+ *       query token suffices.</li>
  *   <li><b>More clean options</b> (blue panel) — the remaining clean products
  *       from the scanned pool.</li>
  * </ul>
@@ -65,6 +67,11 @@ public class AlternatesCardController {
     private List<ProductResult> morePool = new ArrayList<>();
     private Set<String> queryTokens = new HashSet<>();
     private Set<String> superiorTerms = new HashSet<>();
+    /**
+     * True for non-branded (category) searches: the exact-match stack then
+     * requires ALL query tokens in the description, not just any one.
+     */
+    private boolean requireAllTokens = false;
 
     // Last shown context, so the toggle can re-render without a new search.
     private String currentFoodType = "";
@@ -101,12 +108,17 @@ public class AlternatesCardController {
     }
 
     /**
-     * The full scanned clean pool (pre-rank) plus the query tokens used for the
-     * exact-match hard filter. The toggle re-ranks from these stacks.
+     * The full scanned clean pool (pre-rank), the query tokens used for the
+     * exact-match hard filter, and whether this is a non-branded (category)
+     * search. For category searches the exact-match filter is strict (ALL
+     * query tokens must appear); for branded searches it is lenient (any
+     * token). The toggle re-ranks from these stacks.
      */
-    public void setPool(List<ProductResult> pool, Set<String> queryTokens) {
+    public void setPool(List<ProductResult> pool, Set<String> queryTokens,
+                        boolean categoryIntent) {
         this.pool = pool != null ? pool : new ArrayList<>();
         this.queryTokens = queryTokens != null ? queryTokens : new HashSet<>();
+        this.requireAllTokens = categoryIntent;
         partitionPool();
     }
 
@@ -233,18 +245,30 @@ public class AlternatesCardController {
     }
 
     /**
-     * Hard filter: the product description shares at least one query token
-     * (tokens shorter than 3 chars are ignored to avoid noise like "c").
+     * Hard filter on the product description.
+     * <ul>
+     *   <li>Non-branded (category) search: the description must contain ALL
+     *       query tokens, in any order.</li>
+     *   <li>Branded search: the description must share at least one query token.</li>
+     * </ul>
+     * Tokens shorter than 3 chars are ignored to avoid noise like "c". With no
+     * qualifying tokens at all, nothing counts as an exact match.
      */
     private boolean isExactMatch(ProductResult p) {
         if (p == null || p.name == null) return false;
         Set<String> descTokens = StringNormalizer.wordTokens(p.name);
+        boolean anyValidToken = false;
         for (String t : queryTokens) {
-            if (t.length() >= 3 && descTokens.contains(t)) {
+            if (t.length() < 3) continue;
+            anyValidToken = true;
+            boolean present = descTokens.contains(t);
+            if (requireAllTokens) {
+                if (!present) return false;
+            } else if (present) {
                 return true;
             }
         }
-        return false;
+        return requireAllTokens && anyValidToken;
     }
 
     /** Ranks one stack with the shared ranking logic (no item cap — the stack scrolls). */
