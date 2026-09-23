@@ -741,7 +741,12 @@ private void showAlternatesCard(String foodType, boolean categoryIntent, boolean
 
                 int startPos = spannableBuilder.length();
 
-                String itemHeader = item.getStarRating() + " " + alt.name;
+                // Little attention-drawing icons: herb for organic picks,
+                // butterfly (Non-GMO Project mark) for non-GMO picks.
+                String itemHeader = "";
+                if (item.hasOrganic) itemHeader += "🌿 "; // U+1F33F
+                if (item.nonGmo) itemHeader += "🦋 "; // U+1F98B
+                itemHeader += item.getStarRating() + " " + alt.name;
                 if (!TextUtils.isEmpty(alt.brand)) {
                     itemHeader += " (" + alt.brand + ")";
                 }
