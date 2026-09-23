@@ -29,6 +29,13 @@ android {
     buildFeatures {
         buildConfig true
     }
+
+    // Name the built APK true-food.apk instead of the default app-<variant>.apk
+    applicationVariants.all { variant ->
+        variant.outputs.all { output ->
+            outputFileName = "true-food.apk"
+        }
+    }
 }
 
 dependencies {
