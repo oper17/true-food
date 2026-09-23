@@ -438,6 +438,10 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
     String primaryKey = normalize(primaryResult.name) + "|" + normalize(primaryResult.brand);
     seenProductKeys.add(primaryKey);
 
+    // Scan the whole page for clean candidates: the first few raw results are
+    // often all flagged (e.g. nearly every cookie contains wheat), so stopping
+    // after 5 raw candidates can miss clean items further down the list. Stop
+    // once we have collected 5 clean candidates instead.
     for (int i = 0; i < foods.length(); i++) {
         JSONObject f = foods.getJSONObject(i);
         String name = f.optString("description", "");
@@ -455,6 +459,9 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
         seenProductKeys.add(productKey);
 
         FlaggedIngredientManager.MatchResult matchResult = FlaggedIngredientManager.analyzeIngredients(this, ingredients);
+        if (matchResult != null && matchResult.hasMatches()) {
+            continue; // flagged -> not a clean choice
+        }
         ProductResult altResult = new ProductResult(true, name, brand, ingredients, matchResult);
         altResult.foodCategory = f.optString("foodCategory", "");
         altResult.gtinUpc = f.optString("gtinUpc", "");
@@ -504,6 +511,15 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
                             List<AlternateRanker.RankedProduct> alternates) {
+    // Unbranded category search (e.g. "cookies"): the top hit is just one random
+    // branded product in the category, not what the user asked about, so hide the
+    // primary verdict card and show only the clean-choices card.
+    if (categoryIntent) {
+        if (resultCard != null) resultCard.setVisibility(View.GONE);
+        showAlternatesCard(foodType, true, true, alternates);
+        return;
+    }
+
     resultCard.setVisibility(View.VISIBLE);
 
     int colorClean = Color.parseColor("#166534");
@@ -635,6 +651,15 @@ private List<ProductResult> searchUSDAAlternates(String foodCategory, boolean fi
     }
 
     // 3. Clean Alternates Section
+    showAlternatesCard(foodType, categoryIntent, isClean, alternates);
+}
+
+/**
+ * Binds the clean-alternates card. For category searches the heading names the
+ * category ("Clean choices in <Category>"); otherwise it reads "Clean Alternates".
+ */
+private void showAlternatesCard(String foodType, boolean categoryIntent, boolean isClean,
+                                List<AlternateRanker.RankedProduct> alternates) {
     if (alternatesCard != null && alternatesTitle != null && alternatesText != null) {
         String alternatesHeading = (categoryIntent && !TextUtils.isEmpty(foodType))
                 ? "Clean choices in " + foodType
