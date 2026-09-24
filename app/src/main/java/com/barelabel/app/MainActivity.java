@@ -503,8 +503,8 @@ setupCategoryFilterPanel();
     // primary verdict card and show only the clean-choices card.
     if (categoryIntent) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
-        alternatesController.show(foodType, true, true, flaggedCategories, reliefCounts,
-                countActiveFilters());
+        alternatesController.show(foodType, true, true, flaggedCategories,
+                countActiveFilters(), reliefCounts);
         updateStickyBar();
         return;
     }
@@ -676,7 +676,7 @@ setupCategoryFilterPanel();
 
     // 4. Clean Alternates Section
     alternatesController.show(foodType, categoryIntent, isClean, flaggedCategories,
-            reliefCounts, countActiveFilters());
+            countActiveFilters(), reliefCounts);
     updateStickyBar();
 }
 
