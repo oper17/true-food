@@ -135,9 +135,9 @@ protected void onCreate(Bundle savedInstanceState) {
     setContentView(R.layout.activity_main);
 
     // Edge-to-edge is enforced on targetSdk 35+: keep content clear of the status bar.
-    View mainRoot = findViewById(R.id.mainRootLayout);
-    if (mainRoot != null) {
-        mainRoot.setOnApplyWindowInsetsListener((v, insets) -> {
+    View edgeRoot = findViewById(R.id.mainRootLayout);
+    if (edgeRoot != null) {
+        edgeRoot.setOnApplyWindowInsetsListener((v, insets) -> {
             int statusTop = insets.getInsets(
                     android.view.WindowInsets.Type.statusBars()).top;
             v.setPadding(v.getPaddingLeft(), Math.max(v.getPaddingTop(), statusTop),
