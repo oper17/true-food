@@ -55,6 +55,7 @@ import com.example.barelabel.network.UsdaApiClient;
 import com.example.barelabel.FlaggedIngredientManager;
 import com.example.barelabel.search.CleanAlternateFinder;
 import com.example.barelabel.ui.AlternatesCardController;
+import com.example.barelabel.ui.ProductDetailDialog;
 import com.example.barelabel.util.StringNormalizer;
 
 import android.view.ViewGroup;
@@ -148,6 +149,15 @@ protected void onCreate(Bundle savedInstanceState) {
     ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
     if (scanBarcodeButton != null) {
         scanBarcodeButton.setOnClickListener(v -> openBarcodeScanner());
+    }
+
+    // 4b. Scan history button in the header.
+    ImageButton historyButton = findViewById(R.id.historyButton);
+    if (historyButton != null) {
+        historyButton.setOnClickListener(v -> {
+            AnalyticsTracker.historyOpened();
+            startActivity(new Intent(this, HistoryActivity.class));
+        });
     }
 setupCategoryFilterPanel();
     // 5. Attach AutoComplete Manager
@@ -462,6 +472,10 @@ setupCategoryFilterPanel();
 
     boolean isClean = result.flagged == null || result.flagged.isEmpty();
 
+    // Persist this scan to history (deduplicated, newest-first). Disk I/O off the UI thread.
+    final ProductResult scannedResult = result;
+    new Thread(() -> ScanHistoryRepository.saveScan(MainActivity.this, scannedResult)).start();
+
     // 1. BUY Button Visibility
     if (buyButton != null) {
         if (isClean) {
@@ -645,57 +659,7 @@ private void showFullIngredientsDialog(ProductResult product) {
     if (!TextUtils.isEmpty(product.brand)) {
         title += " (" + product.brand + ")";
     }
-
-    SpannableStringBuilder content = new SpannableStringBuilder();
-
-    // Verdict summary line
-    boolean isClean = product.flagged == null || product.flagged.isEmpty();
-    int verdictStart = content.length();
-    if (isClean) {
-        content.append("✓ Clean — no flagged categories\n\n");
-    } else {
-        content.append("⚠ Flagged: ")
-                .append(TextUtils.join(", ", product.flagged))
-                .append("\n\n");
-    }
-    content.setSpan(new StyleSpan(Typeface.BOLD),
-            verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-    content.setSpan(new ForegroundColorSpan(Color.parseColor(isClean ? "#166534" : "#991B1B")),
-            verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-    // Ingredients header
-    int headerStart = content.length();
-    content.append("INGREDIENTS:\n\n");
-    content.setSpan(new StyleSpan(Typeface.BOLD),
-            headerStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-    // Ingredient list with superior ("clean highlight") ingredients highlighted
-    String[] tokens = product.ingredients.split(",");
-    for (int i = 0; i < tokens.length; i++) {
-        String trimmed = tokens[i].trim();
-        if (i > 0) content.append(", ");
-        int tokenStart = content.length();
-        content.append(trimmed);
-        int tokenEnd = content.length();
-        if (FlaggedIngredientManager.isSuperiorIngredient(this, trimmed)) {
-            content.setSpan(new ForegroundColorSpan(Color.parseColor("#15803D")),
-                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            content.setSpan(new StyleSpan(Typeface.BOLD),
-                    tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-    }
-
-    TextView messageView = new TextView(this);
-    messageView.setText(content);
-    messageView.setTextSize(15f);
-    messageView.setPadding(48, 32, 48, 16);
-    messageView.setLineSpacing(1.2f, 1.1f);
-
-    new AlertDialog.Builder(this)
-            .setTitle(title)
-            .setView(messageView)
-            .setPositiveButton("Close", null)
-            .show();
+    ProductDetailDialog.show(this, title, product.ingredients, product.flagged);
 }
 
 

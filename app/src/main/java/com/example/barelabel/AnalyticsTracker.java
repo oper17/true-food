@@ -103,4 +103,14 @@ public final class AnalyticsTracker {
         b.putBoolean("enabled", enabled);
         log("category_toggled", b);
     }
+
+    /** User opened the scan-history screen. */
+    public static void historyOpened() {
+        log("history_opened", new Bundle());
+    }
+
+    /** User opened the product compare sheet from history. */
+    public static void compareOpened() {
+        log("compare_opened", new Bundle());
+    }
 }
