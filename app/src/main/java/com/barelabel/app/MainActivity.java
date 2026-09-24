@@ -78,6 +78,7 @@ public class MainActivity extends AppCompatActivity {
     private View ingredientsCard;
     private TextView toggleIngredientsButton;
     private TextView productTitleText;
+    private android.widget.ImageView productImageView;
     private TextView matchNoticeText;
 	private com.google.android.flexbox.FlexboxLayout categoryCheckboxContainer;
 
@@ -318,6 +319,7 @@ setupCategoryFilterPanel();
         resultCard = findViewById(R.id.resultCard);
 
         productTitleText = findViewById(R.id.productTitleText);
+        productImageView = findViewById(R.id.productImageView);
         matchNoticeText = findViewById(R.id.matchNoticeText);
 
         ingredientsCard = findViewById(R.id.ingredientsCard);
@@ -525,6 +527,7 @@ setupCategoryFilterPanel();
     if (result == null || !result.found) {
         if (matchNoticeText != null) matchNoticeText.setVisibility(View.GONE);
         if (productTitleText != null) productTitleText.setText("No Matching Product");
+        if (productImageView != null) productImageView.setVisibility(View.GONE);
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("? PRODUCT NOT FOUND");
         verdictText.setTextColor(colorMuted);
@@ -543,6 +546,22 @@ setupCategoryFilterPanel();
     if (productTitleText != null) {
         productTitleText.setText(displayName);
         productTitleText.setVisibility(View.VISIBLE);
+    }
+    // Product thumbnail from Open Food Facts (conditional: hidden when absent).
+    if (productImageView != null) {
+        productImageView.setVisibility(View.GONE);
+        productImageView.setTag(result.gtinUpc);
+        final String verdictGtin = result.gtinUpc;
+        com.barelabel.app.images.ProductImageResolver.resolveImageUrl(
+                this, verdictGtin, imageUrl -> {
+                    if (!java.util.Objects.equals(verdictGtin, productImageView.getTag())) return;
+                    if (imageUrl == null) return;
+                    productImageView.setVisibility(View.VISIBLE);
+                    com.bumptech.glide.Glide.with(this)
+                            .load(imageUrl)
+                            .centerCrop()
+                            .into(productImageView);
+                });
     }
 
     String userQuery = searchBox.getText().toString().trim().toLowerCase(Locale.US);

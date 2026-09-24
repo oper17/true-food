@@ -472,6 +472,30 @@ public class AlternatesCardController {
         titleView.setTextColor(Color.parseColor("#111827"));
         headerRow.addView(titleView);
 
+        // Product thumbnail: conditional slot, only visible when OFF has an image.
+        // Fixed 56dp so rows never shift; GONE (text-only row) until resolved.
+        android.widget.ImageView thumbView = new android.widget.ImageView(ctx);
+        int thumbSize = dp(56);
+        LinearLayout.LayoutParams thumbParams = new LinearLayout.LayoutParams(
+                thumbSize, thumbSize);
+        thumbParams.setMarginEnd(dp(10));
+        thumbView.setLayoutParams(thumbParams);
+        thumbView.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        thumbView.setVisibility(View.GONE);
+        headerRow.addView(thumbView, 0);
+        String thumbGtin = alt.gtinUpc;
+        thumbView.setTag(thumbGtin);
+        com.barelabel.app.images.ProductImageResolver.resolveImageUrl(
+                ctx, thumbGtin, imageUrl -> {
+                    if (!java.util.Objects.equals(thumbGtin, thumbView.getTag())) return; // row rebound
+                    if (imageUrl == null) return; // stay text-only
+                    thumbView.setVisibility(View.VISIBLE);
+                    com.bumptech.glide.Glide.with(ctx)
+                            .load(imageUrl)
+                            .centerCrop()
+                            .into(thumbView);
+                });
+
         if (saveListener != null) {
             TextView saveButton = new TextView(ctx);
             saveButton.setText("Save");
