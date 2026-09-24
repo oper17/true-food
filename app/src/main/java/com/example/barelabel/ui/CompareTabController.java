@@ -20,6 +20,9 @@ import java.util.List;
 /**
  * Owns the Compare tab: two product pickers fed by scan history, a Compare
  * button, and the side-by-side result rendered inline below the pickers.
+ * The host can also push an externally chosen pair (e.g. from search
+ * results) via {@link #compareExternal}, which pins those two products at
+ * the top of the pickers and renders the comparison immediately.
  */
 public class CompareTabController {
 
@@ -29,6 +32,8 @@ public class CompareTabController {
     private final LinearLayout resultContainer;
     private final TextView emptyHint;
     private final List<ScannedProduct> products = new ArrayList<>();
+    /** Bumped by compareExternal so a stale history refresh can't clobber it. */
+    private int generation = 0;
 
     public CompareTabController(AppCompatActivity activity, View tabContent) {
         this.activity = activity;
@@ -41,36 +46,72 @@ public class CompareTabController {
 
     /** Reload the product pickers from storage; call when the tab is selected. */
     public void refresh() {
+        final int gen = generation;
         new Thread(() -> {
-            List<ScannedProduct> all = ScanHistoryRepository.getAll(activity);
-            List<ScannedProduct> comparable = new ArrayList<>();
-            for (ScannedProduct p : all) {
-                if (p.ingredients != null && !p.ingredients.trim().isEmpty()) {
-                    comparable.add(p);
-                }
-            }
+            List<ScannedProduct> comparable = loadComparable();
             activity.runOnUiThread(() -> {
-                products.clear();
-                products.addAll(comparable);
-                List<String> names = new ArrayList<>();
-                for (ScannedProduct p : products) {
-                    names.add(p.displayName() + (p.clean ? "  ✓" : "  ⚠"));
-                }
-                ArrayAdapter<String> adapter = new ArrayAdapter<>(
-                        activity, android.R.layout.simple_spinner_item, names);
-                adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-                spinnerA.setAdapter(adapter);
-                spinnerB.setAdapter(adapter);
-                if (products.size() >= 2) {
-                    spinnerA.setSelection(0);
-                    spinnerB.setSelection(1);
-                }
-                boolean enough = products.size() >= 2;
-                emptyHint.setVisibility(enough ? View.GONE : View.VISIBLE);
-                spinnerA.setEnabled(enough);
-                spinnerB.setEnabled(enough);
+                if (gen != generation) return; // superseded by compareExternal
+                setProducts(comparable, 0, 1);
             });
         }).start();
+    }
+
+    /**
+     * Compare two products chosen outside the tab (e.g. search results).
+     * They are pinned at the top of both pickers and compared immediately;
+     * the user can still re-pick from history via the spinners afterwards.
+     */
+    public void compareExternal(ScannedProduct a, ScannedProduct b) {
+        generation++;
+        final int gen = generation;
+        new Thread(() -> {
+            List<ScannedProduct> combined = new ArrayList<>();
+            combined.add(a);
+            combined.add(b);
+            for (ScannedProduct p : loadComparable()) {
+                if (p.id.equals(a.id) || p.id.equals(b.id)) continue;
+                combined.add(p);
+            }
+            activity.runOnUiThread(() -> {
+                if (gen != generation) return;
+                setProducts(combined, 0, 1);
+                renderComparison(0, 1);
+                AnalyticsTracker.compareOpened();
+            });
+        }).start();
+    }
+
+    private List<ScannedProduct> loadComparable() {
+        List<ScannedProduct> all = ScanHistoryRepository.getAll(activity);
+        List<ScannedProduct> comparable = new ArrayList<>();
+        for (ScannedProduct p : all) {
+            if (p.ingredients != null && !p.ingredients.trim().isEmpty()) {
+                comparable.add(p);
+            }
+        }
+        return comparable;
+    }
+
+    private void setProducts(List<ScannedProduct> list, int selectA, int selectB) {
+        products.clear();
+        products.addAll(list);
+        List<String> names = new ArrayList<>();
+        for (ScannedProduct p : products) {
+            names.add(p.displayName() + (p.clean ? "  ✓" : "  ⚠"));
+        }
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+                activity, android.R.layout.simple_spinner_item, names);
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        spinnerA.setAdapter(adapter);
+        spinnerB.setAdapter(adapter);
+        boolean enough = products.size() >= 2;
+        if (enough) {
+            spinnerA.setSelection(Math.min(selectA, products.size() - 1));
+            spinnerB.setSelection(Math.min(selectB, products.size() - 1));
+        }
+        emptyHint.setVisibility(enough ? View.GONE : View.VISIBLE);
+        spinnerA.setEnabled(enough);
+        spinnerB.setEnabled(enough);
     }
 
     private void runCompare() {
@@ -84,10 +125,14 @@ public class CompareTabController {
             Toast.makeText(activity, "Pick two different products", Toast.LENGTH_SHORT).show();
             return;
         }
+        renderComparison(ia, ib);
+        AnalyticsTracker.compareOpened();
+    }
+
+    private void renderComparison(int ia, int ib) {
         ScannedProduct a = products.get(ia);
         ScannedProduct b = products.get(ib);
         resultContainer.removeAllViews();
         resultContainer.addView(CompareViewBuilder.build(activity, a, b));
-        AnalyticsTracker.compareOpened();
     }
 }

@@ -155,6 +155,16 @@
                 android:src="@android:drawable/ic_menu_camera"
                 app:tint="#374151" />
         </LinearLayout>
+
+        <Button
+            android:id="@+id/compareFromSearchButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:backgroundTint="#166534"
+            android:text="Compare"
+            android:textColor="#FFFFFF"
+            android:visibility="gone" />
 		<LinearLayout
     android:id="@+id/categoryFilterPanel"
     android:layout_width="match_parent"
@@ -323,6 +333,15 @@
     android:layout_width="wrap_content"
     android:layout_height="wrap_content"
     android:text="Full Ingredients List"
+    android:textSize="13sp"
+    android:visibility="gone" />
+
+				<Button
+    android:id="@+id/primaryCompareToggle"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:layout_marginTop="8dp"
+    android:text="+ Compare"
     android:textSize="13sp"
     android:visibility="gone" />
 	

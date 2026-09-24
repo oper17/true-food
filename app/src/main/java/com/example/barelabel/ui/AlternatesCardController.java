@@ -52,6 +52,12 @@ public class AlternatesCardController {
         void onBuy(ProductResult product);
     }
 
+    /** Lets the host activity drive compare selection from alternate rows. */
+    public interface ComparePickListener {
+        boolean isSelectedForCompare(ProductResult product);
+        void onToggleComparePick(ProductResult product);
+    }
+
     private final AppCompatActivity activity;
     private final View card;
     private final TextView title;
@@ -93,6 +99,9 @@ public class AlternatesCardController {
     private String currentHeading = "";
     private int lastExactCount = 0;
     private int lastMoreCount = 0;
+    /** Top-ranked clean alternate across both stacks; null when none shown. */
+    private ProductResult lastTopAlternate = null;
+    private ComparePickListener comparePickListener;
 
     public AlternatesCardController(AppCompatActivity activity, View card, TextView title,
                                     TextView text, SwitchCompat organicSwitch,
@@ -145,6 +154,23 @@ public class AlternatesCardController {
         this.onClearFilters = onClearFilters;
     }
 
+    /** Host wiring for the per-row "+ Compare" toggle. */
+    public void setComparePickListener(ComparePickListener listener) {
+        this.comparePickListener = listener;
+    }
+
+    /** Top-ranked clean alternate across both stacks; null when none shown. */
+    public ProductResult getTopAlternate() {
+        return lastTopAlternate;
+    }
+
+    /** Re-binds the visible rows so compare-toggle states refresh. No network. */
+    public void refreshCompareSelection() {
+        if (card == null || card.getVisibility() != View.VISIBLE) return;
+        showInternal(currentFoodType, currentCategoryIntent, currentAlternatesClean,
+                currentFlaggedCategories, currentActiveFilterCount, true);
+    }
+
     /**
      * The full scanned clean pool (pre-rank), the query tokens used for the
      * exact-match hard filter, and whether this is a non-branded (category)
@@ -173,6 +199,7 @@ public class AlternatesCardController {
 
     public void hide() {
         if (card != null) card.setVisibility(View.GONE);
+        lastTopAlternate = null;
     }
 
     /** Heading currently shown on the card (for the sticky results bar). */
@@ -218,6 +245,8 @@ public class AlternatesCardController {
         List<AlternateRanker.RankedProduct> moreRanked = topRanked(morePool);
         lastExactCount = exactRanked.size();
         lastMoreCount = moreRanked.size();
+        lastTopAlternate = !exactRanked.isEmpty() ? exactRanked.get(0).product
+                : (!moreRanked.isEmpty() ? moreRanked.get(0).product : null);
 
         if (card != null && title != null && text != null) {
             currentHeading = (categoryIntent && !TextUtils.isEmpty(foodType))
@@ -460,6 +489,22 @@ public class AlternatesCardController {
         metaView.setTextColor(Color.parseColor("#374151"));
         metaView.setPadding(0, dp(4), 0, 0);
         row.addView(metaView);
+
+        // "+ Compare" toggle: pick up to 2 products across the search results.
+        if (comparePickListener != null && !TextUtils.isEmpty(alt.ingredients)) {
+            boolean selected = comparePickListener.isSelectedForCompare(alt);
+            Button compareBtn = new Button(ctx);
+            compareBtn.setText(selected ? "✓ Selected for compare" : "+ Compare");
+            compareBtn.setTextSize(12f);
+            compareBtn.setAllCaps(false);
+            compareBtn.setPadding(dp(8), dp(2), dp(8), dp(2));
+            LinearLayout.LayoutParams cbParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cbParams.topMargin = dp(6);
+            final ProductResult compareAlt = alt;
+            compareBtn.setOnClickListener(v -> comparePickListener.onToggleComparePick(compareAlt));
+            row.addView(compareBtn, cbParams);
+        }
 
         // Expandable detail: full ingredients + Buy
         LinearLayout expandBox = new LinearLayout(ctx);
