@@ -462,11 +462,12 @@ public class AlternatesCardController {
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         titleView.setLayoutParams(titleParams);
-        StringBuilder header = new StringBuilder();
-        if (item.hasOrganic) header.append("🌿 ");
-        if (item.nonGmo) header.append("🦋 ");
-        header.append(item.getStarRating()).append(" ").append(cleanProductName(alt.name));
-        titleView.setText(header.toString());
+        StringBuilder prefixBuilder = new StringBuilder();
+        if (item.hasOrganic) prefixBuilder.append("🌿 ");
+        if (item.nonGmo) prefixBuilder.append("🦋 ");
+        prefixBuilder.append(item.getStarRating()).append(" ");
+        final String titlePrefix = prefixBuilder.toString();
+        titleView.setText(titlePrefix + cleanProductName(alt.name));
         titleView.setTextSize(15f);
         titleView.setTypeface(titleView.getTypeface(), Typeface.BOLD);
         titleView.setTextColor(Color.parseColor("#111827"));
@@ -485,15 +486,20 @@ public class AlternatesCardController {
         headerRow.addView(thumbView, 0);
         String thumbGtin = alt.gtinUpc;
         thumbView.setTag(thumbGtin);
-        com.barelabel.app.images.ProductImageResolver.resolveImageUrl(
-                ctx, thumbGtin, imageUrl -> {
+        com.barelabel.app.images.ProductImageResolver.resolve(
+                ctx, thumbGtin, info -> {
                     if (!java.util.Objects.equals(thumbGtin, thumbView.getTag())) return; // row rebound
-                    if (imageUrl == null) return; // stay text-only
-                    thumbView.setVisibility(View.VISIBLE);
-                    com.bumptech.glide.Glide.with(ctx)
-                            .load(imageUrl)
-                            .centerCrop()
-                            .into(thumbView);
+                    if (info == null) return;
+                    if (info.hasImage()) {
+                        thumbView.setVisibility(View.VISIBLE);
+                        com.bumptech.glide.Glide.with(ctx)
+                                .load(info.imageUrl)
+                                .centerCrop()
+                                .into(thumbView);
+                    }
+                    if (info.hasName()) {
+                        titleView.setText(titlePrefix + info.displayName());
+                    }
                 });
 
         if (saveListener != null) {

@@ -461,7 +461,10 @@ setupCategoryFilterPanel();
     }
 
     private void openShoppingSearch(ProductResult product) {
-        openShoppingUrl(ShoppingUrlBuilder.buildProductUrl(product));
+        com.barelabel.app.images.ProductImageResolver.OffProductInfo off =
+                com.barelabel.app.images.ProductImageResolver.getCached(
+                        this, product == null ? "" : product.gtinUpc);
+        openShoppingUrl(ShoppingUrlBuilder.buildProductUrl(product, off));
     }
 
     private void openShoppingUrl(String shoppingUrl) {
@@ -547,20 +550,25 @@ setupCategoryFilterPanel();
         productTitleText.setText(displayName);
         productTitleText.setVisibility(View.VISIBLE);
     }
-    // Product thumbnail from Open Food Facts (conditional: hidden when absent).
+    // Product thumbnail + friendlier OFF name (conditional: hidden/absent when unavailable).
     if (productImageView != null) {
         productImageView.setVisibility(View.GONE);
         productImageView.setTag(result.gtinUpc);
         final String verdictGtin = result.gtinUpc;
-        com.barelabel.app.images.ProductImageResolver.resolveImageUrl(
-                this, verdictGtin, imageUrl -> {
+        com.barelabel.app.images.ProductImageResolver.resolve(
+                this, verdictGtin, info -> {
                     if (!java.util.Objects.equals(verdictGtin, productImageView.getTag())) return;
-                    if (imageUrl == null) return;
-                    productImageView.setVisibility(View.VISIBLE);
-                    com.bumptech.glide.Glide.with(this)
-                            .load(imageUrl)
-                            .centerCrop()
-                            .into(productImageView);
+                    if (info == null) return;
+                    if (info.hasImage()) {
+                        productImageView.setVisibility(View.VISIBLE);
+                        com.bumptech.glide.Glide.with(this)
+                                .load(info.imageUrl)
+                                .centerCrop()
+                                .into(productImageView);
+                    }
+                    if (info.hasName() && productTitleText != null) {
+                        productTitleText.setText(info.displayName());
+                    }
                 });
     }
 
