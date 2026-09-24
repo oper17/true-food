@@ -48,6 +48,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import com.barelabel.app.model.AlternateSearchResult;
@@ -78,6 +79,7 @@ public class MainActivity extends AppCompatActivity {
     private View ingredientsCard;
     private TextView toggleIngredientsButton;
     private TextView productTitleText;
+    private android.widget.ImageView productImageView;
     private TextView matchNoticeText;
 	private com.google.android.flexbox.FlexboxLayout categoryCheckboxContainer;
 
@@ -159,6 +161,10 @@ protected void onCreate(Bundle savedInstanceState) {
             product -> openShoppingSearch(product));
     alternatesController.setSuperiorTerms(superiorTerms);
     alternatesController.setOnClearFilters(this::clearAllFiltersAndSearch);
+    alternatesController.setOnUncheckFilter(category -> {
+        uncheckFilterCategory(category);
+        search();
+    });
 
     // 4. Setup Barcode Scanner Button
     ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
@@ -318,6 +324,7 @@ setupCategoryFilterPanel();
         resultCard = findViewById(R.id.resultCard);
 
         productTitleText = findViewById(R.id.productTitleText);
+        productImageView = findViewById(R.id.productImageView);
         matchNoticeText = findViewById(R.id.matchNoticeText);
 
         ingredientsCard = findViewById(R.id.ingredientsCard);
@@ -436,8 +443,9 @@ setupCategoryFilterPanel();
                 final String finalCategory = foodType;
                 final boolean finalCategoryIntent = categoryIntent;
                 final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
+                final Map<String, Integer> finalReliefCounts = altSearch.filterBlockCounts;
                 runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
-                        finalFlaggedCategories, fetchedById));
+                        finalFlaggedCategories, finalReliefCounts, fetchedById));
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -459,7 +467,10 @@ setupCategoryFilterPanel();
     }
 
     private void openShoppingSearch(ProductResult product) {
-        openShoppingUrl(ShoppingUrlBuilder.buildProductUrl(product));
+        com.barelabel.app.images.ProductImageResolver.OffProductInfo off =
+                com.barelabel.app.images.ProductImageResolver.getCached(
+                        this, product == null ? "" : product.gtinUpc);
+        openShoppingUrl(ShoppingUrlBuilder.buildProductUrl(product, off));
     }
 
     private void openShoppingUrl(String shoppingUrl) {
@@ -483,7 +494,8 @@ setupCategoryFilterPanel();
 
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
-                            Set<String> flaggedCategories, boolean fetchedById) {
+                            Set<String> flaggedCategories, Map<String, Integer> reliefCounts,
+                            boolean fetchedById) {
         currentPrimaryResult = result;
         clearComparePicks();
     // Unbranded category search (e.g. "cookies"): the top hit is just one random
@@ -491,7 +503,8 @@ setupCategoryFilterPanel();
     // primary verdict card and show only the clean-choices card.
     if (categoryIntent) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
-        alternatesController.show(foodType, true, true, flaggedCategories, countActiveFilters());
+        alternatesController.show(foodType, true, true, flaggedCategories,
+                countActiveFilters(), reliefCounts);
         updateStickyBar();
         return;
     }
@@ -525,6 +538,7 @@ setupCategoryFilterPanel();
     if (result == null || !result.found) {
         if (matchNoticeText != null) matchNoticeText.setVisibility(View.GONE);
         if (productTitleText != null) productTitleText.setText("No Matching Product");
+        if (productImageView != null) productImageView.setVisibility(View.GONE);
         resultCard.setBackgroundResource(R.drawable.verdict_dirty);
         verdictText.setText("? PRODUCT NOT FOUND");
         verdictText.setTextColor(colorMuted);
@@ -541,8 +555,30 @@ setupCategoryFilterPanel();
         displayName += " (" + result.brand + ")";
     }
     if (productTitleText != null) {
-        productTitleText.setText(displayName);
+        productTitleText.setText(StringNormalizer.toTitleCase(displayName));
         productTitleText.setVisibility(View.VISIBLE);
+    }
+    // Product thumbnail + friendlier OFF name (conditional: hidden/absent when unavailable).
+    if (productImageView != null) {
+        productImageView.setVisibility(View.GONE);
+        productImageView.setTag(result.gtinUpc);
+        final String verdictGtin = result.gtinUpc;
+        com.barelabel.app.images.ProductImageResolver.resolve(
+                this, verdictGtin, info -> {
+                    if (!java.util.Objects.equals(verdictGtin, productImageView.getTag())) return;
+                    if (info == null) return;
+                    if (info.hasImage()) {
+                        productImageView.setVisibility(View.VISIBLE);
+                        com.bumptech.glide.Glide.with(this)
+                                .load(info.imageUrl)
+                                .centerCrop()
+                                .into(productImageView);
+                    }
+                    if (info.hasName() && productTitleText != null) {
+                        productTitleText.setText(
+                                StringNormalizer.toTitleCase(info.displayName()));
+                    }
+                });
     }
 
     String userQuery = searchBox.getText().toString().trim().toLowerCase(Locale.US);
@@ -640,7 +676,7 @@ setupCategoryFilterPanel();
 
     // 4. Clean Alternates Section
     alternatesController.show(foodType, categoryIntent, isClean, flaggedCategories,
-            countActiveFilters());
+            countActiveFilters(), reliefCounts);
     updateStickyBar();
 }
 
@@ -699,6 +735,19 @@ private void clearAllFiltersAndSearch() {
         }
     }
     search();
+}
+
+/** Unchecks one filter category (smart relief) — the checkbox listener persists it. */
+private void uncheckFilterCategory(String category) {
+    if (categoryCheckboxContainer == null || category == null) return;
+    for (int i = 0; i < categoryCheckboxContainer.getChildCount(); i++) {
+        View child = categoryCheckboxContainer.getChildAt(i);
+        if (child instanceof CheckBox
+                && category.equals(((CheckBox) child).getText().toString())) {
+            ((CheckBox) child).setChecked(false);
+            return;
+        }
+    }
 }
 
 /**

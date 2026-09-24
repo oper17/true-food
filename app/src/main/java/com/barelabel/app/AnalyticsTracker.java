@@ -126,6 +126,16 @@ public final class AnalyticsTracker {
     }
 
     /**
+     * User tapped a smart "Uncheck <filter>" suggestion in the empty state.
+     */
+    public static void filterReliefTapped(String category, int itemCount) {
+        Bundle b = new Bundle();
+        b.putString("category", category);
+        b.putInt("item_count", itemCount);
+        log("filter_relief_tapped", b);
+    }
+
+    /**
      * User saved a product to history.
      * source: "alternate" or "compare".
      */

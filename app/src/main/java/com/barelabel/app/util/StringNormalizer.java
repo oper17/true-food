@@ -24,4 +24,27 @@ public final class StringNormalizer {
         }
         return tokens;
     }
+
+    /**
+     * Natural English casing for display: first letter of each word capitalized,
+     * rest lowercased. Apostrophes don't trigger capitalization ("Pic's", not
+     * "Pic'S"); hyphens and other separators do ("Sugar-Free").
+     */
+    public static String toTitleCase(String text) {
+        if (text == null) return "";
+        String lower = text.toLowerCase(Locale.US);
+        StringBuilder out = new StringBuilder(lower.length());
+        boolean capNext = true;
+        for (int i = 0; i < lower.length(); i++) {
+            char c = lower.charAt(i);
+            if (Character.isLetterOrDigit(c)) {
+                out.append(capNext ? Character.toUpperCase(c) : c);
+                capNext = false;
+            } else {
+                out.append(c);
+                capNext = c != '\'';
+            }
+        }
+        return out.toString();
+    }
 }

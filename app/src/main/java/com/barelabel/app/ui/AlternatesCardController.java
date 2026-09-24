@@ -10,7 +10,6 @@ import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -26,8 +25,11 @@ import com.barelabel.app.model.ProductResult;
 import com.barelabel.app.util.StringNormalizer;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -93,7 +95,7 @@ public class AlternatesCardController {
     }
 
     private ComparePickListener comparePickListener;
-    private final Map<String, CheckBox> compareBoxes = new HashMap<>();
+    private final Map<String, android.widget.Button> compareBoxes = new HashMap<>();
     private boolean syncingCompareBoxes;
 
     /** Host persists an alternate to scan history. Returns true when saved. */
@@ -104,11 +106,21 @@ public class AlternatesCardController {
     private SaveListener saveListener;
     private Runnable onClearFilters;
 
+    /** Host unchecks one filter category and re-searches (smart relief). */
+    public interface OnUncheckFilterListener {
+        void onUncheckFilter(String category);
+    }
+
+    private OnUncheckFilterListener onUncheckFilter;
+    /** Programmatic bar of "Uncheck X (N)" suggestion buttons in the empty state. */
+    private LinearLayout filterSuggestionBar;
+
     // Last shown context, so the toggle can re-render without a new search.
     private String currentFoodType = "";
     private boolean currentCategoryIntent = false;
     private boolean currentAlternatesClean = true;
     private Set<String> currentFlaggedCategories = new LinkedHashSet<>();
+    private Map<String, Integer> currentReliefCounts = new LinkedHashMap<>();
     private int currentActiveFilterCount = 0;
     private String currentHeading = "";
     private int lastExactCount = 0;
@@ -165,6 +177,11 @@ public class AlternatesCardController {
         this.onClearFilters = onClearFilters;
     }
 
+    /** Action for a smart "Uncheck <filter>" suggestion in the empty state. */
+    public void setOnUncheckFilter(OnUncheckFilterListener onUncheckFilter) {
+        this.onUncheckFilter = onUncheckFilter;
+    }
+
     /**
      * The full scanned clean pool (pre-rank), the query tokens used for the
      * exact-match hard filter, and whether this is a non-branded (category)
@@ -194,19 +211,66 @@ public class AlternatesCardController {
         this.saveListener = listener;
     }
 
-    /** Re-check every row box from the host's pick set (call after any toggle). */
+    /** Re-style every compare button from the host's pick set (call after any toggle). */
     public void syncCompareBoxes() {
         if (comparePickListener == null) return;
         syncingCompareBoxes = true;
         try {
-            for (Map.Entry<String, CheckBox> e : compareBoxes.entrySet()) {
-                // Key is rowKey(product); find the product via the box tag.
+            for (Map.Entry<String, android.widget.Button> e : compareBoxes.entrySet()) {
+                // Key is rowKey(product); find the product via the button tag.
                 ProductResult p = (ProductResult) e.getValue().getTag();
-                e.getValue().setChecked(p != null
+                styleCompareButton(e.getValue(), p != null
                         && comparePickListener.isSelectedForCompare(p));
             }
         } finally {
             syncingCompareBoxes = false;
+        }
+    }
+
+    /** Rounded-rectangle background for action buttons. strokeColor 0 = no stroke. */
+    private android.graphics.drawable.GradientDrawable pillBackground(
+            int fillColor, int strokeColor) {
+        android.graphics.drawable.GradientDrawable d =
+                new android.graphics.drawable.GradientDrawable();
+        d.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+        d.setCornerRadius(dp(8));
+        d.setColor(fillColor);
+        if (strokeColor != 0) d.setStroke(dp(1), strokeColor);
+        return d;
+    }
+
+    /** Real button (not text): fixed styling, no ALL_CAPS, comfortable touch target. */
+    private android.widget.Button makeActionButton(Context ctx, String text,
+                                                   int fillColor, int textColor,
+                                                   int strokeColor) {
+        android.widget.Button b = new android.widget.Button(ctx);
+        b.setText(text);
+        b.setAllCaps(false);
+        b.setTextSize(13f);
+        b.setTypeface(b.getTypeface(), Typeface.BOLD);
+        b.setTextColor(textColor);
+        b.setBackground(pillBackground(fillColor, strokeColor));
+        b.setMinWidth(0);
+        b.setMinimumWidth(0);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        p.setMarginEnd(dp(8));
+        b.setLayoutParams(p);
+        b.setPadding(dp(16), dp(6), dp(16), dp(6));
+        return b;
+    }
+
+    /** Compare toggle visuals: green filled when selected, outlined when not. */
+    private void styleCompareButton(android.widget.Button b, boolean selected) {
+        if (selected) {
+            b.setBackground(pillBackground(Color.parseColor("#15803D"), 0));
+            b.setTextColor(Color.parseColor("#FFFFFF"));
+            b.setText("\u2713 Compare");
+        } else {
+            b.setBackground(pillBackground(Color.parseColor("#FFFFFF"),
+                    Color.parseColor("#9CA3AF")));
+            b.setTextColor(Color.parseColor("#374151"));
+            b.setText("Compare");
         }
     }
 
@@ -241,23 +305,31 @@ public class AlternatesCardController {
      * Binds the clean-alternates card as two ranked stacks. For category searches
      * the heading names the category ("Clean choices in <Category>"); otherwise it
      * reads "Clean Alternates". When nothing passes, an explicit empty state names
-     * the active filter count and offers to clear all filters.
+     * the most restrictive filters and offers to relax them individually.
+     *
+     * @param reliefCounts per-filter counts of scanned candidates each filter is
+     *                     blocking (a candidate blocked by several filters counts
+     *                     toward each); ranked descending to surface the most
+     *                     restrictive filters first.
      */
     public void show(String foodType, boolean categoryIntent, boolean isClean,
-                     Set<String> flaggedCategories, int activeFilterCount) {
+                     Set<String> flaggedCategories, int activeFilterCount,
+                     Map<String, Integer> reliefCounts) {
         showInternal(foodType, categoryIntent, isClean, flaggedCategories,
-                activeFilterCount, false);
+                activeFilterCount, reliefCounts, false);
     }
 
     private void showInternal(String foodType, boolean categoryIntent, boolean isClean,
                               Set<String> flaggedCategories, int activeFilterCount,
-                              boolean isRerank) {
+                              Map<String, Integer> reliefCounts, boolean isRerank) {
         // Stash the context so the prefer-organic switch can re-rank without a new search.
         currentFoodType = foodType;
         currentCategoryIntent = categoryIntent;
         currentAlternatesClean = isClean;
         currentFlaggedCategories = flaggedCategories != null ? flaggedCategories : new LinkedHashSet<>();
         currentActiveFilterCount = activeFilterCount;
+        currentReliefCounts = reliefCounts != null ? reliefCounts : new LinkedHashMap<>();
+        clearFilterSuggestionBar();
 
         List<AlternateRanker.RankedProduct> exactRanked = topRanked(exactPool);
         List<AlternateRanker.RankedProduct> moreRanked = topRanked(morePool);
@@ -314,10 +386,7 @@ public class AlternatesCardController {
                     text.setVisibility(View.VISIBLE);
                     if (categoryIntent && !TextUtils.isEmpty(foodType)) {
                         if (activeFilterCount > 0) {
-                            text.setText("No exact matches with " + activeFilterCount
-                                    + (activeFilterCount == 1 ? " filter" : " filters")
-                                    + " on for " + foodType
-                                    + ".\nTry clearing all filters below.");
+                            showSmartFilterRelief();
                         } else if (flaggedCategories != null && !flaggedCategories.isEmpty()) {
                             text.setText("All items in " + foodType
                                     + " have the following flagged categories: "
@@ -327,13 +396,18 @@ public class AlternatesCardController {
                             text.setText("No clean choices were found for " + foodType
                                     + " in the database.");
                         }
+                    } else if (activeFilterCount > 0) {
+                        // Branded search with filters on: same smart relief.
+                        text.setText("No clean alternatives for this item"
+                                + " with your current filters on.");
+                        showSmartFilterRelief();
                     } else {
                         text.setText("No clean alternatives were found for this item"
                                 + " in the database.");
-                    }
-                    if (clearFiltersButton != null) {
-                        clearFiltersButton.setVisibility(
-                                activeFilterCount > 0 ? View.VISIBLE : View.GONE);
+                        clearFilterSuggestionBar();
+                        if (clearFiltersButton != null) {
+                            clearFiltersButton.setVisibility(View.GONE);
+                        }
                     }
                 } else {
                     // If the product itself is clean, hide the alternates card
@@ -349,7 +423,8 @@ public class AlternatesCardController {
      */
     private void rerank() {
         showInternal(currentFoodType, currentCategoryIntent, currentAlternatesClean,
-                currentFlaggedCategories, currentActiveFilterCount, true);
+                currentFlaggedCategories, currentActiveFilterCount,
+                currentReliefCounts, true);
     }
 
     /** Splits the pool into the exact-match stack and the rest. */
@@ -395,6 +470,80 @@ public class AlternatesCardController {
     /** Ranks one stack with the shared ranking logic (no item cap — the stack scrolls). */
     private List<AlternateRanker.RankedProduct> topRanked(List<ProductResult> stack) {
         return AlternateRanker.rankAndFilter(stack, superiorTerms, preferOrganic);
+    }
+
+    /**
+     * Smart filter relief for the empty state: instead of "clear ALL filters",
+     * rank filters by how many items each is blocking and offer one-tap
+     * per-filter relief, most restrictive first.
+     */
+    private void showSmartFilterRelief() {
+        clearFilterSuggestionBar();
+        List<Map.Entry<String, Integer>> top = topReliefFilters(3);
+        if (!top.isEmpty() && onUncheckFilter != null) {
+            Map.Entry<String, Integer> first = top.get(0);
+            int n = first.getValue();
+            text.setText("No clean options with your current filters on.\n\n\""
+                    + first.getKey() + "\" is blocking " + n
+                    + (n == 1 ? " item" : " items")
+                    + " \u2014 more than any other filter. "
+                    + "Uncheck it below to widen your options.");
+            buildFilterSuggestionBar(top);
+            if (clearFiltersButton != null) clearFiltersButton.setVisibility(View.GONE);
+        } else {
+            // No per-filter data: keep the old clear-all escape hatch.
+            text.setText("No clean options with your current filters on."
+                    + "\nTry clearing all filters below.");
+            if (clearFiltersButton != null) clearFiltersButton.setVisibility(View.VISIBLE);
+        }
+    }
+
+    /** Top-N blocking filters by single-filter block count, descending. */
+    private List<Map.Entry<String, Integer>> topReliefFilters(int n) {
+        List<Map.Entry<String, Integer>> entries =
+                new ArrayList<>(currentReliefCounts.entrySet());
+        Collections.sort(entries,
+                (a, b) -> Integer.compare(b.getValue(), a.getValue()));
+        return entries.subList(0, Math.min(n, entries.size()));
+    }
+
+    /** One-tap "Uncheck <filter> (N)" buttons appended to the card. */
+    private void buildFilterSuggestionBar(List<Map.Entry<String, Integer>> top) {
+        if (!(card instanceof ViewGroup)) return;
+        Context ctx = card.getContext();
+        filterSuggestionBar = new LinearLayout(ctx);
+        filterSuggestionBar.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout.LayoutParams barParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        barParams.topMargin = dp(8);
+        filterSuggestionBar.setLayoutParams(barParams);
+        for (Map.Entry<String, Integer> e : top) {
+            final String category = e.getKey();
+            final int count = e.getValue();
+            Button b = makeActionButton(ctx,
+                    "Uncheck " + category + " (" + count + ")",
+                    Color.parseColor("#FFFFFF"), Color.parseColor("#2563EB"),
+                    Color.parseColor("#2563EB"));
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            p.topMargin = dp(6);
+            b.setLayoutParams(p);
+            b.setOnClickListener(v -> {
+                AnalyticsTracker.filterReliefTapped(category, count);
+                if (onUncheckFilter != null) onUncheckFilter.onUncheckFilter(category);
+            });
+            filterSuggestionBar.addView(b);
+        }
+        ((ViewGroup) card).addView(filterSuggestionBar);
+    }
+
+    private void clearFilterSuggestionBar() {
+        if (filterSuggestionBar != null) {
+            ViewGroup parent = (ViewGroup) filterSuggestionBar.getParent();
+            if (parent != null) parent.removeView(filterSuggestionBar);
+            filterSuggestionBar = null;
+        }
     }
 
     private void hideStackPanels() {
@@ -462,52 +611,31 @@ public class AlternatesCardController {
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         titleView.setLayoutParams(titleParams);
-        StringBuilder header = new StringBuilder();
-        if (item.hasOrganic) header.append("🌿 ");
-        if (item.nonGmo) header.append("🦋 ");
-        header.append(item.getStarRating()).append(" ").append(cleanProductName(alt.name));
-        titleView.setText(header.toString());
+        StringBuilder prefixBuilder = new StringBuilder();
+        if (item.hasOrganic) prefixBuilder.append("🌿 ");
+        if (item.nonGmo) prefixBuilder.append("🦋 ");
+        prefixBuilder.append(item.getStarRating()).append(" ");
+        final String titlePrefix = prefixBuilder.toString();
+        titleView.setText(titlePrefix
+                + StringNormalizer.toTitleCase(cleanProductName(alt.name)));
         titleView.setTextSize(15f);
         titleView.setTypeface(titleView.getTypeface(), Typeface.BOLD);
         titleView.setTextColor(Color.parseColor("#111827"));
         headerRow.addView(titleView);
 
-        if (saveListener != null) {
-            TextView saveButton = new TextView(ctx);
-            saveButton.setText("Save");
-            saveButton.setTextSize(13f);
-            saveButton.setTypeface(saveButton.getTypeface(), Typeface.BOLD);
-            saveButton.setTextColor(Color.parseColor("#2563EB"));
-            saveButton.setPadding(dp(10), dp(6), dp(10), dp(6));
-            saveButton.setClickable(true);
-            saveButton.setFocusable(true);
-            saveButton.setOnClickListener(v -> {
-                if (saveListener.onSaveProduct(alt)) {
-                    saveButton.setText("Saved \u2713");
-                    saveButton.setTextColor(Color.parseColor("#9CA3AF"));
-                    saveButton.setEnabled(false);
-                }
-            });
-            headerRow.addView(saveButton);
-        }
-
-        if (comparePickListener != null) {
-            CheckBox compareBox = new CheckBox(ctx);
-            compareBox.setText("Compare");
-            compareBox.setTextSize(13f);
-            compareBox.setTextColor(Color.parseColor("#374151"));
-            compareBox.setTag(alt);
-            compareBox.setChecked(comparePickListener.isSelectedForCompare(alt));
-            compareBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
-                if (syncingCompareBoxes) return;
-                AnalyticsTracker.compareCheckboxToggled(isChecked, "alternate");
-                comparePickListener.onToggleComparePick(alt);
-                // Host may have rejected the pick (max 2): re-sync to truth.
-                syncCompareBoxes();
-            });
-            headerRow.addView(compareBox);
-            compareBoxes.put(rowKey(alt), compareBox);
-        }
+        // Product thumbnail: conditional slot, only visible when OFF has an image.
+        // Fixed 56dp so rows never shift; GONE (text-only row) until resolved.
+        android.widget.ImageView thumbView = new android.widget.ImageView(ctx);
+        int thumbSize = dp(56);
+        LinearLayout.LayoutParams thumbParams = new LinearLayout.LayoutParams(
+                thumbSize, thumbSize);
+        thumbParams.setMarginEnd(dp(10));
+        thumbView.setLayoutParams(thumbParams);
+        thumbView.setScaleType(android.widget.ImageView.ScaleType.CENTER_CROP);
+        thumbView.setVisibility(View.GONE);
+        headerRow.addView(thumbView, 0);
+        String thumbGtin = alt.gtinUpc;
+        thumbView.setTag(thumbGtin);
 
         TextView chevron = new TextView(ctx);
         chevron.setText("›");
@@ -517,14 +645,29 @@ public class AlternatesCardController {
         headerRow.addView(chevron);
         row.addView(headerRow);
 
-        // Brand line (only when present)
+        // Brand bubble: pill with eye-catching color — brand is the most
+        // critical identifier, so it gets prominence, not gray small text.
+        final android.widget.TextView brandView;
         if (!TextUtils.isEmpty(alt.brand)) {
-            TextView brandView = new TextView(ctx);
-            brandView.setText(alt.brand);
-            brandView.setTextSize(13f);
-            brandView.setTextColor(Color.parseColor("#6B7280"));
-            brandView.setPadding(0, dp(2), 0, 0);
+            brandView = new android.widget.TextView(ctx);
+            brandView.setText(StringNormalizer.toTitleCase(alt.brand));
+            brandView.setTextSize(12f);
+            brandView.setTypeface(brandView.getTypeface(), Typeface.BOLD);
+            brandView.setTextColor(Color.parseColor("#FFFFFF"));
+            brandView.setPadding(dp(10), dp(4), dp(10), dp(4));
+            android.graphics.drawable.GradientDrawable brandBg =
+                    new android.graphics.drawable.GradientDrawable();
+            brandBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
+            brandBg.setCornerRadius(dp(12));
+            brandBg.setColor(Color.parseColor("#C2410C"));
+            brandView.setBackground(brandBg);
+            LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            brandParams.topMargin = dp(6);
+            brandView.setLayoutParams(brandParams);
             row.addView(brandView);
+        } else {
+            brandView = null;
         }
 
         // Meta line: ✓ Clean • N ingredients • M clean highlights
@@ -543,6 +686,84 @@ public class AlternatesCardController {
         metaView.setPadding(0, dp(4), 0, 0);
         row.addView(metaView);
 
+        // Open Food Facts enrichment: thumbnail, friendlier title, cleaner brand.
+        // Single lookup; the resolver serves repeat calls from its memory cache.
+        final android.widget.ImageView finalThumb = thumbView;
+        final TextView finalTitle = titleView;
+        final android.widget.TextView finalBrand = brandView;
+        final String finalPrefix = titlePrefix;
+        final String finalGtin = thumbGtin;
+        com.barelabel.app.images.ProductImageResolver.resolve(
+                ctx, finalGtin, info -> {
+                    if (!java.util.Objects.equals(finalGtin, finalThumb.getTag())) return;
+                    if (info == null) return;
+                    if (info.hasImage()) {
+                        finalThumb.setVisibility(View.VISIBLE);
+                        com.bumptech.glide.Glide.with(ctx)
+                                .load(info.imageUrl)
+                                .centerCrop()
+                                .into(finalThumb);
+                    }
+                    if (info.hasName()) {
+                        finalTitle.setText(finalPrefix
+                                + StringNormalizer.toTitleCase(info.displayName()));
+                    }
+                    if (finalBrand != null && !info.brands.isEmpty()) {
+                        finalBrand.setText(StringNormalizer.toTitleCase(info.brands));
+                    }
+                });
+
+        // Action row: real Buy / Save / Compare buttons below the meta line.
+        LinearLayout actionRow = new LinearLayout(ctx);
+        actionRow.setOrientation(LinearLayout.HORIZONTAL);
+        actionRow.setPadding(0, dp(10), 0, 0);
+
+        android.widget.Button buyButton = makeActionButton(ctx, "Buy",
+                Color.parseColor("#2563EB"), Color.parseColor("#FFFFFF"), 0);
+        buyButton.setOnClickListener(v -> {
+            AnalyticsTracker.buyTapped("alternate");
+            buyListener.onBuy(alt);
+        });
+        actionRow.addView(buyButton);
+
+        if (saveListener != null) {
+            android.widget.Button saveButton = makeActionButton(ctx, "Save",
+                    Color.parseColor("#FFFFFF"), Color.parseColor("#2563EB"),
+                    Color.parseColor("#2563EB"));
+            saveButton.setOnClickListener(v -> {
+                if (saveListener.onSaveProduct(alt)) {
+                    saveButton.setText("Saved \u2713");
+                    saveButton.setEnabled(false);
+                    saveButton.setBackground(
+                            pillBackground(Color.parseColor("#F3F4F6"), 0));
+                    saveButton.setTextColor(Color.parseColor("#9CA3AF"));
+                }
+            });
+            actionRow.addView(saveButton);
+        }
+
+        if (comparePickListener != null) {
+            android.widget.Button compareButton = makeActionButton(ctx, "Compare",
+                    Color.parseColor("#FFFFFF"), Color.parseColor("#374151"),
+                    Color.parseColor("#9CA3AF"));
+            compareButton.setTag(alt);
+            compareButton.setOnClickListener(v -> {
+                if (syncingCompareBoxes) return;
+                // Intended new state (checkbox semantics): toggle of current truth.
+                boolean intended = !comparePickListener.isSelectedForCompare(alt);
+                AnalyticsTracker.compareCheckboxToggled(intended, "alternate");
+                comparePickListener.onToggleComparePick(alt);
+                // Host may have rejected the pick (max 2): re-sync to truth.
+                syncCompareBoxes();
+            });
+            actionRow.addView(compareButton);
+            compareBoxes.put(rowKey(alt), compareButton);
+            styleCompareButton(compareButton,
+                    comparePickListener.isSelectedForCompare(alt));
+        }
+
+        row.addView(actionRow);
+
         // Expandable detail: full ingredients + Buy
         LinearLayout expandBox = new LinearLayout(ctx);
         expandBox.setOrientation(LinearLayout.VERTICAL);
@@ -556,21 +777,6 @@ public class AlternatesCardController {
         ingredientsView.setTextColor(Color.parseColor("#374151"));
         ingredientsView.setLineSpacing(dp(2), 1f);
         expandBox.addView(ingredientsView);
-
-        TextView buyView = new TextView(ctx);
-        buyView.setText("Buy ›");
-        buyView.setTextSize(14f);
-        buyView.setTypeface(buyView.getTypeface(), Typeface.BOLD);
-        buyView.setTextColor(Color.parseColor("#2563EB"));
-        buyView.setPadding(0, dp(8), 0, 0);
-        buyView.setClickable(true);
-        buyView.setFocusable(true);
-        final ProductResult tappedAlt = alt;
-        buyView.setOnClickListener(v -> {
-            AnalyticsTracker.buyTapped("alternate");
-            buyListener.onBuy(tappedAlt);
-        });
-        expandBox.addView(buyView);
 
         String key = rowKey(alt);
         boolean expanded = expandedKeys.contains(key);

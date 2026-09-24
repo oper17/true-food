@@ -20,6 +20,19 @@ public final class ShoppingUrlBuilder {
 
     /** Shopping URL for a product: name/description plus brand owner and brand name. */
     public static String buildProductUrl(ProductResult product) {
+        return buildProductUrl(product, null);
+    }
+
+    /**
+     * Shopping URL preferring Open Food Facts naming when available: its
+     * product_name/brands/quantity form a much friendlier shopping query
+     * than USDA's terse descriptions.
+     */
+    public static String buildProductUrl(ProductResult product,
+                                         com.barelabel.app.images.ProductImageResolver.OffProductInfo off) {
+        if (off != null && off.hasName()) {
+            return buildSearchUrl(off.shoppingQuery());
+        }
         if (product == null) return buildSearchUrl("");
         String query = cleanName(product.name);
         String[] tags = {

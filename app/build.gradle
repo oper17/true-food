@@ -83,6 +83,8 @@ dependencies {
     implementation 'com.google.firebase:firebase-analytics'
 // ML Kit Barcode Scanning (Free & On-Device)
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
+// Glide: product image loading (Open Food Facts URLs)
+    implementation 'com.github.bumptech.glide:glide:4.16.0'
 
     // CameraX dependencies
     def camera_version = "1.3.4"
