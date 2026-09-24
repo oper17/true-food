@@ -48,6 +48,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 import com.barelabel.app.model.AlternateSearchResult;
@@ -160,6 +161,10 @@ protected void onCreate(Bundle savedInstanceState) {
             product -> openShoppingSearch(product));
     alternatesController.setSuperiorTerms(superiorTerms);
     alternatesController.setOnClearFilters(this::clearAllFiltersAndSearch);
+    alternatesController.setOnUncheckFilter(category -> {
+        uncheckFilterCategory(category);
+        search();
+    });
 
     // 4. Setup Barcode Scanner Button
     ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
@@ -438,8 +443,9 @@ setupCategoryFilterPanel();
                 final String finalCategory = foodType;
                 final boolean finalCategoryIntent = categoryIntent;
                 final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
+                final Map<String, Integer> finalReliefCounts = altSearch.singleFilterBlockCounts;
                 runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
-                        finalFlaggedCategories, fetchedById));
+                        finalFlaggedCategories, finalReliefCounts, fetchedById));
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -488,7 +494,8 @@ setupCategoryFilterPanel();
 
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
-                            Set<String> flaggedCategories, boolean fetchedById) {
+                            Set<String> flaggedCategories, Map<String, Integer> reliefCounts,
+                            boolean fetchedById) {
         currentPrimaryResult = result;
         clearComparePicks();
     // Unbranded category search (e.g. "cookies"): the top hit is just one random
@@ -496,7 +503,8 @@ setupCategoryFilterPanel();
     // primary verdict card and show only the clean-choices card.
     if (categoryIntent) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
-        alternatesController.show(foodType, true, true, flaggedCategories, countActiveFilters());
+        alternatesController.show(foodType, true, true, flaggedCategories, reliefCounts,
+                countActiveFilters());
         updateStickyBar();
         return;
     }
@@ -547,7 +555,7 @@ setupCategoryFilterPanel();
         displayName += " (" + result.brand + ")";
     }
     if (productTitleText != null) {
-        productTitleText.setText(displayName);
+        productTitleText.setText(StringNormalizer.toTitleCase(displayName));
         productTitleText.setVisibility(View.VISIBLE);
     }
     // Product thumbnail + friendlier OFF name (conditional: hidden/absent when unavailable).
@@ -567,7 +575,8 @@ setupCategoryFilterPanel();
                                 .into(productImageView);
                     }
                     if (info.hasName() && productTitleText != null) {
-                        productTitleText.setText(info.displayName());
+                        productTitleText.setText(
+                                StringNormalizer.toTitleCase(info.displayName()));
                     }
                 });
     }
@@ -667,7 +676,7 @@ setupCategoryFilterPanel();
 
     // 4. Clean Alternates Section
     alternatesController.show(foodType, categoryIntent, isClean, flaggedCategories,
-            countActiveFilters());
+            reliefCounts, countActiveFilters());
     updateStickyBar();
 }
 
@@ -726,6 +735,19 @@ private void clearAllFiltersAndSearch() {
         }
     }
     search();
+}
+
+/** Unchecks one filter category (smart relief) — the checkbox listener persists it. */
+private void uncheckFilterCategory(String category) {
+    if (categoryCheckboxContainer == null || category == null) return;
+    for (int i = 0; i < categoryCheckboxContainer.getChildCount(); i++) {
+        View child = categoryCheckboxContainer.getChildAt(i);
+        if (child instanceof CheckBox
+                && category.equals(((CheckBox) child).getText().toString())) {
+            ((CheckBox) child).setChecked(false);
+            return;
+        }
+    }
 }
 
 /**

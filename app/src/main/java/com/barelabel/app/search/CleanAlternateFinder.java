@@ -125,7 +125,15 @@ public class CleanAlternateFinder {
                 if (matchResult != null && matchResult.hasMatches()) {
                     // Remember which categories blocked this candidate so the UI can
                     // explain an empty result ("everything here contains gluten…").
-                    result.flaggedCategories.addAll(matchResult.categoryMap.keySet());
+                    Set<String> blockedBy = matchResult.categoryMap.keySet();
+                    result.flaggedCategories.addAll(blockedBy);
+                    // Candidates blocked by exactly one filter are the honest basis
+                    // for "uncheck X to bring back N items" suggestions.
+                    if (blockedBy.size() == 1) {
+                        String only = blockedBy.iterator().next();
+                        Integer n = result.singleFilterBlockCounts.get(only);
+                        result.singleFilterBlockCounts.put(only, n == null ? 1 : n + 1);
+                    }
                     continue;
                 }
                 ProductResult altResult = new ProductResult(true, name, brand, ingredients, matchResult);
