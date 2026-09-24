@@ -336,6 +336,14 @@
                 android:textColor="#FFFFFF"
                 android:textSize="13sp"
                 android:textStyle="bold" />
+            <TextView
+                android:id="@+id/affiliateDisclosure"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="We may earn a commission when you buy through links on this page."
+                android:textColor="#6B7280"
+                android:textSize="11sp" />
             <CheckBox
                 android:id="@+id/verdictCompareBox"
                 android:layout_width="wrap_content"

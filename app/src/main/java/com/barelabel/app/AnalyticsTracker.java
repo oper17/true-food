@@ -80,6 +80,51 @@ public final class AnalyticsTracker {
     }
 
     /**
+     * Affiliate links resolved for a Buy tap (before opening anything).
+     * source: "primary_product", "alternate", "compare", "search_box".
+     */
+    public static void affiliateImpression(String source,
+            java.util.List<com.barelabel.app.affiliate.AffiliateLink> links) {
+        Bundle b = new Bundle();
+        b.putString("source", source);
+        b.putInt("link_count", links.size());
+        boolean hasDirect = false;
+        StringBuilder retailers = new StringBuilder();
+        for (com.barelabel.app.affiliate.AffiliateLink link : links) {
+            if (link.direct) hasDirect = true;
+            if (retailers.length() > 0) retailers.append(",");
+            retailers.append(link.retailerId);
+        }
+        b.putBoolean("has_direct_mapping", hasDirect);
+        b.putString("retailers", retailers.toString());
+        log("affiliate_impression", b);
+    }
+
+    /** User opened an affiliate link (directly or from the retailer picker). */
+    public static void affiliateTap(String source, String retailer,
+                                    boolean isDirect) {
+        Bundle b = new Bundle();
+        b.putString("source", source);
+        b.putString("retailer", retailer);
+        b.putBoolean("is_direct", isDirect);
+        log("affiliate_tap", b);
+    }
+
+    /** A newer remote affiliate-mapping file was applied in the background. */
+    public static void affiliateMappingsUpdated(int version) {
+        Bundle b = new Bundle();
+        b.putInt("version", version);
+        log("affiliate_mappings_updated", b);
+    }
+
+    /** User changed their preferred Buy retailer in Settings. */
+    public static void preferredRetailerChanged(String retailer) {
+        Bundle b = new Bundle();
+        b.putString("retailer", retailer);
+        log("preferred_retailer_changed", b);
+    }
+
+    /**
      * User tapped a BUY! button.
      * source: "primary_product", "search_box", or "alternate".
      */

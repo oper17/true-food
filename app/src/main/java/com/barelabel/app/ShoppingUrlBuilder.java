@@ -24,16 +24,15 @@ public final class ShoppingUrlBuilder {
     }
 
     /**
-     * Shopping URL preferring Open Food Facts naming when available: its
-     * product_name/brands/quantity form a much friendlier shopping query
-     * than USDA's terse descriptions.
+     * Raw shopping query for a product: OFF friendly naming when available,
+     * else the USDA description plus brand owner/brand name.
      */
-    public static String buildProductUrl(ProductResult product,
-                                         com.barelabel.app.images.ProductImageResolver.OffProductInfo off) {
+    public static String buildQuery(ProductResult product,
+                                    com.barelabel.app.images.ProductImageResolver.OffProductInfo off) {
         if (off != null && off.hasName()) {
-            return buildSearchUrl(off.shoppingQuery());
+            return off.shoppingQuery();
         }
-        if (product == null) return buildSearchUrl("");
+        if (product == null) return "";
         String query = cleanName(product.name);
         String[] tags = {
             !TextUtils.isEmpty(product.brandOwner) ? product.brandOwner : product.brand,
@@ -46,7 +45,17 @@ public final class ShoppingUrlBuilder {
                 query = (query + " " + cleaned).trim();
             }
         }
-        return buildSearchUrl(query);
+        return query;
+    }
+
+    /**
+     * Shopping URL preferring Open Food Facts naming when available: its
+     * product_name/brands/quantity form a much friendlier shopping query
+     * than USDA's terse descriptions.
+     */
+    public static String buildProductUrl(ProductResult product,
+                                         com.barelabel.app.images.ProductImageResolver.OffProductInfo off) {
+        return buildSearchUrl(buildQuery(product, off));
     }
 
     /** Google Shopping tab search for a raw query (product name/description). */

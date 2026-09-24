@@ -148,6 +148,22 @@ public final class CompareViewBuilder {
 
         if (listener != null) {
             col.addView(actionRow(context, p, savedKeys, listener));
+
+            // FTC affiliate disclosure: only when this item has curated
+            // affiliate links, not for plain search-fallback Buy links.
+            if (com.barelabel.app.affiliate.AffiliateNavigator.hasAffiliateLinks(
+                    context, p.name, p.brand)) {
+                TextView disclosure = new TextView(context);
+                disclosure.setText(
+                        com.barelabel.app.affiliate.AffiliateConfig.DISCLOSURE_TEXT);
+                disclosure.setTextSize(10f);
+                disclosure.setTextColor(Color.parseColor("#6B7280"));
+                disclosure.setGravity(Gravity.CENTER);
+                LinearLayout.LayoutParams disclosureParams = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                disclosureParams.topMargin = dp(context, 4);
+                col.addView(disclosure, disclosureParams);
+            }
         }
 
         return col;

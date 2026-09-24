@@ -3,7 +3,6 @@ package com.barelabel.app;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.net.Uri;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -31,9 +30,7 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.SwitchCompat;
-import androidx.browser.customtabs.CustomTabColorSchemeParams;
 import androidx.browser.customtabs.CustomTabsIntent;
-import androidx.core.content.ContextCompat;
 import androidx.core.widget.NestedScrollView;
 
 import com.google.android.flexbox.FlexboxLayout;
@@ -143,6 +140,10 @@ protected void onCreate(Bundle savedInstanceState) {
 
     AnalyticsTracker.init(this);
 
+    // Refresh affiliate mappings in the background (throttled, silent on
+    // failure); bundled mappings are used until a newer remote version lands.
+    com.barelabel.app.affiliate.AffiliateManager.checkForUpdates(this);
+
     // 1. Bind UI Components
     bindViews();
 
@@ -158,7 +159,7 @@ protected void onCreate(Bundle savedInstanceState) {
             findViewById(R.id.alternatesTitle),
             findViewById(R.id.alternatesText),
             (SwitchCompat) findViewById(R.id.preferOrganicSwitch),
-            product -> openShoppingSearch(product));
+            product -> openShoppingSearch(product, "alternate"));
     alternatesController.setSuperiorTerms(superiorTerms);
     alternatesController.setOnClearFilters(this::clearAllFiltersAndSearch);
     alternatesController.setOnUncheckFilter(category -> {
@@ -170,6 +171,12 @@ protected void onCreate(Bundle savedInstanceState) {
     ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
     if (scanBarcodeButton != null) {
         scanBarcodeButton.setOnClickListener(v -> openBarcodeScanner());
+    }
+
+    // 4b. Settings (wrench): preferred retailer for Buy links.
+    ImageButton settingsButton = findViewById(R.id.settingsButton);
+    if (settingsButton != null) {
+        settingsButton.setOnClickListener(v -> showRetailerSettings());
     }
 
 setupCategoryFilterPanel();
@@ -192,7 +199,8 @@ setupCategoryFilterPanel();
                         pr.found = true;
                         pr.name = p.name;
                         pr.brand = p.brand;
-                        openShoppingSearch(pr);
+                        AnalyticsTracker.buyTapped("compare");
+                        openShoppingSearch(pr, "compare");
                     }
 
                     @Override
@@ -463,33 +471,45 @@ setupCategoryFilterPanel();
 
 
     private void openShoppingSearch(String query) {
-        openShoppingUrl(ShoppingUrlBuilder.buildSearchUrl(query));
+        com.barelabel.app.affiliate.AffiliateNavigator.openBuyForQuery(
+                this, query, "search_box");
     }
 
-    private void openShoppingSearch(ProductResult product) {
+    private void openShoppingSearch(ProductResult product, String source) {
         com.barelabel.app.images.ProductImageResolver.OffProductInfo off =
                 com.barelabel.app.images.ProductImageResolver.getCached(
                         this, product == null ? "" : product.gtinUpc);
-        openShoppingUrl(ShoppingUrlBuilder.buildProductUrl(product, off));
+        com.barelabel.app.affiliate.AffiliateNavigator.openBuy(
+                this, product, off, source);
     }
 
-    private void openShoppingUrl(String shoppingUrl) {
-        CustomTabColorSchemeParams colorParams = new CustomTabColorSchemeParams.Builder()
-                .setToolbarColor(ContextCompat.getColor(this, R.color.cream))
-                .build();
-
-        CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder()
-                .setDefaultColorSchemeParams(colorParams)
-                .setShowTitle(true)
-                .setUrlBarHidingEnabled(true)
-                .build();
-
-        try {
-            customTabsIntent.launchUrl(this, Uri.parse(shoppingUrl));
-        } catch (Exception e) {
-            Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(shoppingUrl));
-            startActivity(browserIntent);
+    /** Settings (wrench): let the user pick their preferred Buy retailer. */
+    private void showRetailerSettings() {
+        java.util.List<com.barelabel.app.affiliate.AffiliateProvider> providers =
+                com.barelabel.app.affiliate.AffiliateManager.get(this).allProviders();
+        String current = com.barelabel.app.affiliate.AffiliateConfig
+                .getPreferredRetailer(this);
+        CharSequence[] names = new CharSequence[providers.size()];
+        int checked = 0;
+        for (int i = 0; i < providers.size(); i++) {
+            com.barelabel.app.affiliate.AffiliateProvider provider = providers.get(i);
+            names[i] = provider.displayName()
+                    + (provider.supportsDirectLinks() ? "" : " · Search only");
+            if (provider.retailerId().equals(current)) checked = i;
         }
+        // Note: no setMessage() here — AlertDialog drops the item list when
+        // a message and items are combined, so the title carries the context.
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("Preferred retailer for Buy links")
+                .setSingleChoiceItems(names, checked, (dialog, which) -> {
+                    String retailerId = providers.get(which).retailerId();
+                    com.barelabel.app.affiliate.AffiliateConfig
+                            .setPreferredRetailer(this, retailerId);
+                    AnalyticsTracker.preferredRetailerChanged(retailerId);
+                    dialog.dismiss();
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
 
@@ -613,17 +633,32 @@ setupCategoryFilterPanel();
     final ProductResult scannedResult = result;
     new Thread(() -> ScanHistoryRepository.saveScan(MainActivity.this, scannedResult)).start();
 
-    // 1. BUY Button Visibility
+    // 1. BUY Button Visibility (+ FTC disclosure shown with it)
+    android.widget.TextView affiliateDisclosure =
+            findViewById(R.id.affiliateDisclosure);
     if (buyButton != null) {
         if (isClean) {
             buyButton.setVisibility(View.VISIBLE);
             buyButton.setText("BUY!");
             buyButton.setOnClickListener(v -> {
                 AnalyticsTracker.buyTapped("primary_product");
-                openShoppingSearch(result);
+                openShoppingSearch(result, "primary_product");
             });
         } else {
             buyButton.setVisibility(View.GONE);
+        }
+        if (affiliateDisclosure != null) {
+            // FTC disclosure only when the item itself has affiliate links,
+            // not for plain search-fallback Buy links.
+            com.barelabel.app.images.ProductImageResolver.OffProductInfo off =
+                    com.barelabel.app.images.ProductImageResolver.getCached(
+                            this, result == null ? "" : result.gtinUpc);
+            boolean buyVisible = buyButton.getVisibility() == View.VISIBLE;
+            boolean hasAffiliate = buyVisible
+                    && com.barelabel.app.affiliate.AffiliateNavigator
+                            .hasAffiliateLinks(this, result, off);
+            affiliateDisclosure.setVisibility(
+                    hasAffiliate ? View.VISIBLE : View.GONE);
         }
     }
 

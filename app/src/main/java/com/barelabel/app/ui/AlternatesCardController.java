@@ -693,6 +693,17 @@ public class AlternatesCardController {
         final android.widget.TextView finalBrand = brandView;
         final String finalPrefix = titlePrefix;
         final String finalGtin = thumbGtin;
+        // FTC disclosure view is created up front so the OFF callback below
+        // can re-evaluate it once friendlier naming arrives; added to the
+        // row after the action row further down.
+        final TextView disclosureView = new TextView(ctx);
+        disclosureView.setText(
+                com.barelabel.app.affiliate.AffiliateConfig.DISCLOSURE_TEXT);
+        disclosureView.setTextSize(10f);
+        disclosureView.setTextColor(Color.parseColor("#6B7280"));
+        disclosureView.setPadding(0, dp(4), 0, 0);
+        disclosureView.setVisibility(View.GONE);
+        final com.barelabel.app.model.ProductResult finalAlt = alt;
         com.barelabel.app.images.ProductImageResolver.resolve(
                 ctx, finalGtin, info -> {
                     if (!java.util.Objects.equals(finalGtin, finalThumb.getTag())) return;
@@ -711,6 +722,13 @@ public class AlternatesCardController {
                     if (finalBrand != null && !info.brands.isEmpty()) {
                         finalBrand.setText(StringNormalizer.toTitleCase(info.brands));
                     }
+                    // Re-evaluate the FTC disclosure with OFF naming: the
+                    // display name can change whether the item has affiliate
+                    // links. Guarded by the same row-binding check above.
+                    disclosureView.setVisibility(
+                            com.barelabel.app.affiliate.AffiliateNavigator
+                                    .hasAffiliateLinks(ctx, finalAlt, info)
+                                    ? View.VISIBLE : View.GONE);
                 });
 
         // Action row: real Buy / Save / Compare buttons below the meta line.
@@ -763,6 +781,13 @@ public class AlternatesCardController {
         }
 
         row.addView(actionRow);
+
+        // FTC affiliate disclosure: only when this item has curated affiliate
+        // links, not for plain search-fallback Buy links.
+        disclosureView.setVisibility(
+                com.barelabel.app.affiliate.AffiliateNavigator.hasAffiliateLinks(
+                        ctx, alt, null) ? View.VISIBLE : View.GONE);
+        row.addView(disclosureView);
 
         // Expandable detail: full ingredients + Buy
         LinearLayout expandBox = new LinearLayout(ctx);
