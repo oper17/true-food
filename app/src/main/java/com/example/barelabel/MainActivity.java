@@ -45,12 +45,14 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
 import com.example.barelabel.model.AlternateSearchResult;
 import com.example.barelabel.model.ProductResult;
+import com.example.barelabel.model.ScannedProduct;
 import com.example.barelabel.network.UsdaApiClient;
 import com.example.barelabel.FlaggedIngredientManager;
 import com.example.barelabel.search.CleanAlternateFinder;
@@ -89,6 +91,11 @@ public class MainActivity extends AppCompatActivity {
     private View historyTabContent;
     private com.example.barelabel.ui.HistoryTabController historyTabController;
     private com.example.barelabel.ui.CompareTabController compareTabController;
+    private com.google.android.material.tabs.TabLayout mainTabLayout;
+    private CheckBox verdictCompareBox;
+    private ProductResult currentPrimaryResult;
+    private final LinkedHashMap<String, ProductResult> comparePicks = new LinkedHashMap<>();
+    private boolean syncingCompareUi;
     private TextView stickyResultsText;
 
     // Verdict pass/fail chips on the primary product card
@@ -157,7 +164,8 @@ protected void onCreate(Bundle savedInstanceState) {
 
 setupCategoryFilterPanel();
     // 4c. Main tabs: Search | Compare | History. Search is the default landing tab.
-    com.google.android.material.tabs.TabLayout tabLayout = findViewById(R.id.mainTabLayout);
+    mainTabLayout = findViewById(R.id.mainTabLayout);
+    com.google.android.material.tabs.TabLayout tabLayout = mainTabLayout;
     View searchTabContent = findViewById(R.id.mainRootLayout);
     compareTabContent = findViewById(R.id.compareTabContent);
     historyTabContent = findViewById(R.id.historyTabContent);
@@ -182,6 +190,29 @@ setupCategoryFilterPanel();
                             com.google.android.material.tabs.TabLayout.Tab tab) {}
                 });
         showTab(0, searchContent);
+    }
+
+    // Compare boxes: one on the verdict card, one per clean-alternate row.
+    // Checking any 2 auto-opens the Compare tab with the pair.
+    if (verdictCompareBox != null) {
+        verdictCompareBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (syncingCompareUi || currentPrimaryResult == null) return;
+            toggleComparePick(currentPrimaryResult);
+        });
+    }
+    if (alternatesController != null) {
+        alternatesController.setComparePickListener(
+                new AlternatesCardController.ComparePickListener() {
+                    @Override
+                    public boolean isSelectedForCompare(ProductResult pr) {
+                        return comparePicks.containsKey(compareKey(pr));
+                    }
+
+                    @Override
+                    public void onToggleComparePick(ProductResult pr) {
+                        toggleComparePick(pr);
+                    }
+                });
     }
     // 5. Attach AutoComplete Manager
     // Unbranded completions (offline dictionary) take rank 1-2; USDA fills the rest.
@@ -264,6 +295,7 @@ setupCategoryFilterPanel();
         stickyResultsBar = findViewById(R.id.stickyResultsBar);
         stickyResultsText = findViewById(R.id.stickyResultsText);
         verdictChipsContainer = findViewById(R.id.verdictChipsContainer);
+        verdictCompareBox = findViewById(R.id.verdictCompareBox);
     }
 
     private void loadSuperiorTerms() {
@@ -302,6 +334,7 @@ setupCategoryFilterPanel();
     }
 
     private void search() {
+        clearComparePicks();
         // Suggestions are no longer needed once the user commits to a search.
         if (autoCompleteManager != null) {
             autoCompleteManager.dismissSuggestions();
@@ -408,6 +441,8 @@ setupCategoryFilterPanel();
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
                             Set<String> flaggedCategories) {
+        currentPrimaryResult = result;
+        clearComparePicks();
     // Unbranded category search (e.g. "cookies"): the top hit is just one random
     // branded product in the category, not what the user asked about, so hide the
     // primary verdict card and show only the clean-choices card.
@@ -673,6 +708,70 @@ private void updateStickyBar() {
             + " • More (" + alternatesController.getMoreCount() + ")");
 }
 
+/** Key identifying a compare pick (verdict card or alternate row). */
+private String compareKey(ProductResult p) {
+    String n = p.name == null ? "" : p.name.trim().toLowerCase(Locale.US);
+    String b = p.brand == null ? "" : p.brand.trim().toLowerCase(Locale.US);
+    return n + "|" + b;
+}
+
+/** Toggle a search result (verdict card or alternate row) in the compare picks (max 2). */
+private void toggleComparePick(ProductResult p) {
+    if (p == null) return;
+    String key = compareKey(p);
+    if (comparePicks.containsKey(key)) {
+        comparePicks.remove(key);
+    } else if (comparePicks.size() >= 2) {
+        Toast.makeText(this, "You can compare at most 2 products",
+                Toast.LENGTH_SHORT).show();
+    } else {
+        comparePicks.put(key, p);
+    }
+    syncCompareBoxes();
+    if (comparePicks.size() == 2) {
+        openCompareForPicks();
+    }
+}
+
+/** Re-check every compare box from the pick set (call after any toggle/clear). */
+private void syncCompareBoxes() {
+    syncingCompareUi = true;
+    try {
+        if (verdictCompareBox != null) {
+            verdictCompareBox.setChecked(currentPrimaryResult != null
+                    && comparePicks.containsKey(compareKey(currentPrimaryResult)));
+        }
+        if (alternatesController != null) {
+            alternatesController.syncCompareBoxes();
+        }
+    } finally {
+        syncingCompareUi = false;
+    }
+}
+
+private void clearComparePicks() {
+    if (comparePicks.isEmpty()) return;
+    comparePicks.clear();
+    syncCompareBoxes();
+}
+
+/** Two picks made: pin the pair on the Compare tab and switch to it. */
+private void openCompareForPicks() {
+    if (comparePicks.size() != 2 || compareTabController == null) return;
+    List<ProductResult> picked = new ArrayList<>(comparePicks.values());
+    compareTabController.compareExternal(
+            ScannedProduct.fromProductResult(picked.get(0)),
+            ScannedProduct.fromProductResult(picked.get(1)));
+    if (mainTabLayout != null) {
+        if (mainTabLayout.getSelectedTabPosition() == 1) {
+            compareTabController.refresh();
+        } else {
+            com.google.android.material.tabs.TabLayout.Tab tab = mainTabLayout.getTabAt(1);
+            if (tab != null) tab.select();
+        }
+    }
+}
+
 /** Switch the visible tab pane: 0 = Search, 1 = Compare, 2 = History. */
 private void showTab(int position, View searchContent) {
     searchContent.setVisibility(position == 0 ? View.VISIBLE : View.GONE);
@@ -715,6 +814,7 @@ private void showFullIngredientsDialog(ProductResult product) {
     }
 
     private void lookupBarcodeAndSearch(String gtin) {
+        clearComparePicks();
         if (progress != null) progress.setVisibility(View.VISIBLE);
 
         new Thread(() -> {

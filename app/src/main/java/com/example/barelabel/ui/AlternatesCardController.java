@@ -10,6 +10,7 @@ import android.util.TypedValue;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -25,9 +26,11 @@ import com.example.barelabel.model.ProductResult;
 import com.example.barelabel.util.StringNormalizer;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -82,6 +85,16 @@ public class AlternatesCardController {
     private boolean requireAllTokens = false;
     /** Row keys (name|brand) currently expanded; preserved across re-ranks. */
     private final Set<String> expandedKeys = new HashSet<>();
+
+    /** Host (MainActivity) tracks the max-2 compare picks across verdict + rows. */
+    public interface ComparePickListener {
+        boolean isSelectedForCompare(ProductResult p);
+        void onToggleComparePick(ProductResult p);
+    }
+
+    private ComparePickListener comparePickListener;
+    private final Map<String, CheckBox> compareBoxes = new HashMap<>();
+    private boolean syncingCompareBoxes;
     private Runnable onClearFilters;
 
     // Last shown context, so the toggle can re-render without a new search.
@@ -158,11 +171,32 @@ public class AlternatesCardController {
         this.queryTokens = queryTokens != null ? queryTokens : new HashSet<>();
         this.requireAllTokens = categoryIntent;
         this.expandedKeys.clear();
+        this.compareBoxes.clear();
         partitionPool();
     }
 
     public void setSuperiorTerms(Set<String> superiorTerms) {
         this.superiorTerms = superiorTerms != null ? superiorTerms : new HashSet<>();
+    }
+
+    public void setComparePickListener(ComparePickListener listener) {
+        this.comparePickListener = listener;
+    }
+
+    /** Re-check every row box from the host's pick set (call after any toggle). */
+    public void syncCompareBoxes() {
+        if (comparePickListener == null) return;
+        syncingCompareBoxes = true;
+        try {
+            for (Map.Entry<String, CheckBox> e : compareBoxes.entrySet()) {
+                // Key is rowKey(product); find the product via the box tag.
+                ProductResult p = (ProductResult) e.getValue().getTag();
+                e.getValue().setChecked(p != null
+                        && comparePickListener.isSelectedForCompare(p));
+            }
+        } finally {
+            syncingCompareBoxes = false;
+        }
     }
 
     /** Resets the toggle for a fresh search. */
@@ -426,6 +460,23 @@ public class AlternatesCardController {
         titleView.setTypeface(titleView.getTypeface(), Typeface.BOLD);
         titleView.setTextColor(Color.parseColor("#111827"));
         headerRow.addView(titleView);
+
+        if (comparePickListener != null) {
+            CheckBox compareBox = new CheckBox(ctx);
+            compareBox.setText("Compare");
+            compareBox.setTextSize(13f);
+            compareBox.setTextColor(Color.parseColor("#374151"));
+            compareBox.setTag(alt);
+            compareBox.setChecked(comparePickListener.isSelectedForCompare(alt));
+            compareBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
+                if (syncingCompareBoxes) return;
+                comparePickListener.onToggleComparePick(alt);
+                // Host may have rejected the pick (max 2): re-sync to truth.
+                syncCompareBoxes();
+            });
+            headerRow.addView(compareBox);
+            compareBoxes.put(rowKey(alt), compareBox);
+        }
 
         TextView chevron = new TextView(ctx);
         chevron.setText("›");
