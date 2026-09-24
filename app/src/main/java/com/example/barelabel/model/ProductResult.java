@@ -18,6 +18,9 @@ public class ProductResult {
     public FlaggedIngredientManager.MatchResult matchResult;
     public Set<String> flagged = new HashSet<>();
 
+    public ProductResult() {
+    }
+
     public ProductResult(boolean found, String name, String brand, String ingredients,
                          FlaggedIngredientManager.MatchResult matchResult, MatchQuality matchQuality) {
         this.found = found;
