@@ -134,18 +134,6 @@ protected void onCreate(Bundle savedInstanceState) {
     super.onCreate(savedInstanceState);
     setContentView(R.layout.activity_main);
 
-    // Edge-to-edge is enforced on targetSdk 35+: keep content clear of the status bar.
-    View edgeRoot = findViewById(R.id.mainRootLayout);
-    if (edgeRoot != null) {
-        edgeRoot.setOnApplyWindowInsetsListener((v, insets) -> {
-            int statusTop = insets.getInsets(
-                    android.view.WindowInsets.Type.statusBars()).top;
-            v.setPadding(v.getPaddingLeft(), Math.max(v.getPaddingTop(), statusTop),
-                    v.getPaddingRight(), v.getPaddingBottom());
-            return insets;
-        });
-    }
-
     setTitle("BareLabel");
 
     AnalyticsTracker.init(this);
