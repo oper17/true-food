@@ -443,7 +443,7 @@ setupCategoryFilterPanel();
                 final String finalCategory = foodType;
                 final boolean finalCategoryIntent = categoryIntent;
                 final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
-                final Map<String, Integer> finalReliefCounts = altSearch.singleFilterBlockCounts;
+                final Map<String, Integer> finalReliefCounts = altSearch.filterBlockCounts;
                 runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
                         finalFlaggedCategories, finalReliefCounts, fetchedById));
 

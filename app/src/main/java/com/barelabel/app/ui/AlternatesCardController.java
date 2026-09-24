@@ -307,8 +307,10 @@ public class AlternatesCardController {
      * reads "Clean Alternates". When nothing passes, an explicit empty state names
      * the most restrictive filters and offers to relax them individually.
      *
-     * @param reliefCounts per-filter counts of scanned candidates blocked ONLY by
-     *                     that filter; unchecking it brings exactly that many back.
+     * @param reliefCounts per-filter counts of scanned candidates each filter is
+     *                     blocking (a candidate blocked by several filters counts
+     *                     toward each); ranked descending to surface the most
+     *                     restrictive filters first.
      */
     public void show(String foodType, boolean categoryIntent, boolean isClean,
                      Set<String> flaggedCategories, int activeFilterCount,
@@ -472,9 +474,8 @@ public class AlternatesCardController {
 
     /**
      * Smart filter relief for the empty state: instead of "clear ALL filters",
-     * name the filters blocking the most items and offer one-tap per-filter
-     * relief. Counts come from candidates blocked ONLY by that filter, so
-     * "uncheck X" brings back exactly that many items.
+     * rank filters by how many items each is blocking and offer one-tap
+     * per-filter relief, most restrictive first.
      */
     private void showSmartFilterRelief() {
         clearFilterSuggestionBar();
@@ -483,10 +484,10 @@ public class AlternatesCardController {
             Map.Entry<String, Integer> first = top.get(0);
             int n = first.getValue();
             text.setText("No clean options with your current filters on.\n\n\""
-                    + first.getKey() + "\" alone is blocking " + n
+                    + first.getKey() + "\" is blocking " + n
                     + (n == 1 ? " item" : " items")
-                    + " we found \u2014 uncheck it below to bring "
-                    + (n == 1 ? "it" : "them") + " back.");
+                    + " \u2014 more than any other filter. "
+                    + "Uncheck it below to widen your options.");
             buildFilterSuggestionBar(top);
             if (clearFiltersButton != null) clearFiltersButton.setVisibility(View.GONE);
         } else {

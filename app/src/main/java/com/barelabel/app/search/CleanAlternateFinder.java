@@ -127,12 +127,11 @@ public class CleanAlternateFinder {
                     // explain an empty result ("everything here contains gluten…").
                     Set<String> blockedBy = matchResult.categoryMap.keySet();
                     result.flaggedCategories.addAll(blockedBy);
-                    // Candidates blocked by exactly one filter are the honest basis
-                    // for "uncheck X to bring back N items" suggestions.
-                    if (blockedBy.size() == 1) {
-                        String only = blockedBy.iterator().next();
-                        Integer n = result.singleFilterBlockCounts.get(only);
-                        result.singleFilterBlockCounts.put(only, n == null ? 1 : n + 1);
+                    // Per-filter block histogram: a candidate blocked by several
+                    // filters counts toward each, ranking filters by restrictiveness.
+                    for (String category : blockedBy) {
+                        Integer n = result.filterBlockCounts.get(category);
+                        result.filterBlockCounts.put(category, n == null ? 1 : n + 1);
                     }
                     continue;
                 }
