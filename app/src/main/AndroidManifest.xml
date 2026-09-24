@@ -37,11 +37,6 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
-        <!-- Scan history -->
-        <activity
-            android:name=".HistoryActivity"
-            android:exported="false" />
-
     </application>
 
 </manifest>
