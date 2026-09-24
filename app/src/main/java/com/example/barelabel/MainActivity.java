@@ -57,6 +57,7 @@ import com.example.barelabel.network.UsdaApiClient;
 import com.example.barelabel.FlaggedIngredientManager;
 import com.example.barelabel.search.CleanAlternateFinder;
 import com.example.barelabel.ui.AlternatesCardController;
+import com.example.barelabel.ui.CompareViewBuilder;
 import com.example.barelabel.ui.ProductDetailDialog;
 import com.example.barelabel.util.StringNormalizer;
 
@@ -174,6 +175,22 @@ setupCategoryFilterPanel();
                 this, historyTabContent);
         compareTabController = new com.example.barelabel.ui.CompareTabController(
                 this, compareTabContent);
+        compareTabController.setCompareActionListener(
+                new CompareViewBuilder.CompareActionListener() {
+                    @Override
+                    public void onBuy(ScannedProduct p) {
+                        ProductResult pr = new ProductResult();
+                        pr.found = true;
+                        pr.name = p.name;
+                        pr.brand = p.brand;
+                        openShoppingSearch(pr);
+                    }
+
+                    @Override
+                    public boolean onSave(ScannedProduct p) {
+                        return saveScannedToHistory(p);
+                    }
+                });
         final View searchContent = searchTabContent;
         tabLayout.addOnTabSelectedListener(
                 new com.google.android.material.tabs.TabLayout.OnTabSelectedListener() {
@@ -213,6 +230,9 @@ setupCategoryFilterPanel();
                         toggleComparePick(pr);
                     }
                 });
+    }
+    if (alternatesController != null) {
+        alternatesController.setSaveListener(this::saveProductToHistory);
     }
     // 5. Attach AutoComplete Manager
     // Unbranded completions (offline dictionary) take rank 1-2; USDA fills the rest.
@@ -750,9 +770,33 @@ private void syncCompareBoxes() {
 }
 
 private void clearComparePicks() {
+    if (compareTabController != null) compareTabController.clearExternal();
     if (comparePicks.isEmpty()) return;
     comparePicks.clear();
     syncCompareBoxes();
+}
+
+/** Save a search result to history. Returns true when actually saved. */
+private boolean saveProductToHistory(ProductResult p) {
+    if (p == null || !p.found || TextUtils.isEmpty(p.ingredients)
+            || p.ingredients.trim().isEmpty()) {
+        return false;
+    }
+    ScanHistoryRepository.saveScan(this, p);
+    Toast.makeText(this, "Saved to history", Toast.LENGTH_SHORT).show();
+    return true;
+}
+
+private boolean saveScannedToHistory(ScannedProduct p) {
+    if (p == null) return false;
+    ProductResult pr = new ProductResult();
+    pr.found = true;
+    pr.name = p.name;
+    pr.brand = p.brand;
+    pr.ingredients = p.ingredients;
+    if (p.flagged != null) pr.flagged.addAll(p.flagged);
+    pr.gtinUpc = p.gtin == null ? "" : p.gtin;
+    return saveProductToHistory(pr);
 }
 
 /** Two picks made: pin the pair on the Compare tab and switch to it. */

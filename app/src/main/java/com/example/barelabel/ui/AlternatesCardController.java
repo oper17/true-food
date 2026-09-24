@@ -95,6 +95,13 @@ public class AlternatesCardController {
     private ComparePickListener comparePickListener;
     private final Map<String, CheckBox> compareBoxes = new HashMap<>();
     private boolean syncingCompareBoxes;
+
+    /** Host persists an alternate to scan history. Returns true when saved. */
+    public interface SaveListener {
+        boolean onSaveProduct(ProductResult p);
+    }
+
+    private SaveListener saveListener;
     private Runnable onClearFilters;
 
     // Last shown context, so the toggle can re-render without a new search.
@@ -181,6 +188,10 @@ public class AlternatesCardController {
 
     public void setComparePickListener(ComparePickListener listener) {
         this.comparePickListener = listener;
+    }
+
+    public void setSaveListener(SaveListener listener) {
+        this.saveListener = listener;
     }
 
     /** Re-check every row box from the host's pick set (call after any toggle). */
@@ -460,6 +471,25 @@ public class AlternatesCardController {
         titleView.setTypeface(titleView.getTypeface(), Typeface.BOLD);
         titleView.setTextColor(Color.parseColor("#111827"));
         headerRow.addView(titleView);
+
+        if (saveListener != null) {
+            TextView saveButton = new TextView(ctx);
+            saveButton.setText("Save");
+            saveButton.setTextSize(13f);
+            saveButton.setTypeface(saveButton.getTypeface(), Typeface.BOLD);
+            saveButton.setTextColor(Color.parseColor("#2563EB"));
+            saveButton.setPadding(dp(10), dp(6), dp(10), dp(6));
+            saveButton.setClickable(true);
+            saveButton.setFocusable(true);
+            saveButton.setOnClickListener(v -> {
+                if (saveListener.onSaveProduct(alt)) {
+                    saveButton.setText("Saved \u2713");
+                    saveButton.setTextColor(Color.parseColor("#9CA3AF"));
+                    saveButton.setEnabled(false);
+                }
+            });
+            headerRow.addView(saveButton);
+        }
 
         if (comparePickListener != null) {
             CheckBox compareBox = new CheckBox(ctx);

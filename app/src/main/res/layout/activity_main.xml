@@ -618,18 +618,6 @@
                         android:textSize="20sp"
                         android:textStyle="bold" />
 
-                    <Spinner
-                        android:id="@+id/compareSpinnerA"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="16dp" />
-
-                    <Spinner
-                        android:id="@+id/compareSpinnerB"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="8dp" />
-
                     <TextView
                         android:id="@+id/compareHintText"
                         android:layout_width="wrap_content"

@@ -46,17 +46,26 @@ public final class CompareViewBuilder {
         ABSENT, CLEAN, FLAGGED, SUPERIOR
     }
 
+    /** Buy / Save actions for the two compared products. */
+    public interface CompareActionListener {
+        void onBuy(ScannedProduct p);
+        /** @return true when the product was actually saved. */
+        boolean onSave(ScannedProduct p);
+    }
+
     /** Clears the container and renders the full comparison table + legend. */
     public static void buildComparison(Context context, LinearLayout container,
-                                       ScannedProduct a, ScannedProduct b) {
+                                       ScannedProduct a, ScannedProduct b,
+                                       java.util.Set<String> savedKeys,
+                                       CompareActionListener listener) {
         container.removeAllViews();
         if (a == null || b == null) return;
 
         // Product header columns
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(LinearLayout.HORIZONTAL);
-        headerRow.addView(productHeader(context, a), columnParams());
-        headerRow.addView(productHeader(context, b), columnParams());
+        headerRow.addView(productHeader(context, a, savedKeys, listener), columnParams());
+        headerRow.addView(productHeader(context, b, savedKeys, listener), columnParams());
         container.addView(headerRow);
 
         container.addView(divider(context), dividerParams(context));
@@ -93,8 +102,10 @@ public final class CompareViewBuilder {
         return divParams;
     }
 
-    /** Name + verdict pill + flagged count, centered in its column. */
-    private static LinearLayout productHeader(Context context, ScannedProduct p) {
+    /** Name + verdict pill + flagged count + Buy/Save actions, centered in its column. */
+    private static LinearLayout productHeader(Context context, ScannedProduct p,
+                                              java.util.Set<String> savedKeys,
+                                              CompareActionListener listener) {
         LinearLayout col = new LinearLayout(context);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER_HORIZONTAL);
@@ -135,7 +146,64 @@ public final class CompareViewBuilder {
         countParams.topMargin = dp(context, 4);
         col.addView(count, countParams);
 
+        if (listener != null) {
+            col.addView(actionRow(context, p, savedKeys, listener));
+        }
+
         return col;
+    }
+
+    /** Buy + Save text buttons under a product column. */
+    private static LinearLayout actionRow(Context context, ScannedProduct p,
+                                          java.util.Set<String> savedKeys,
+                                          CompareActionListener listener) {
+        LinearLayout row = new LinearLayout(context);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams rowParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        rowParams.topMargin = dp(context, 8);
+        row.setLayoutParams(rowParams);
+
+        TextView buy = new TextView(context);
+        buy.setText("Buy");
+        buy.setTextSize(14f);
+        buy.setTypeface(null, Typeface.BOLD);
+        buy.setTextColor(Color.parseColor("#2563EB"));
+        buy.setPadding(dp(context, 12), dp(context, 6), dp(context, 12), dp(context, 6));
+        buy.setClickable(true);
+        buy.setFocusable(true);
+        buy.setOnClickListener(v -> listener.onBuy(p));
+        row.addView(buy);
+
+        TextView save = new TextView(context);
+        boolean alreadySaved = savedKeys != null && savedKeys.contains(productKey(p));
+        save.setText(alreadySaved ? "Saved \u2713" : "Save");
+        save.setTextSize(14f);
+        save.setTypeface(null, Typeface.BOLD);
+        save.setTextColor(Color.parseColor(alreadySaved ? "#9CA3AF" : "#374151"));
+        save.setPadding(dp(context, 12), dp(context, 6), dp(context, 12), dp(context, 6));
+        save.setEnabled(!alreadySaved);
+        save.setClickable(!alreadySaved);
+        save.setFocusable(!alreadySaved);
+        if (!alreadySaved) {
+            save.setOnClickListener(v -> {
+                if (listener.onSave(p)) {
+                    save.setText("Saved \u2713");
+                    save.setTextColor(Color.parseColor("#9CA3AF"));
+                    save.setEnabled(false);
+                }
+            });
+        }
+        row.addView(save);
+
+        return row;
+    }
+
+    private static String productKey(ScannedProduct p) {
+        String name = p.name == null ? "" : p.name.trim().toLowerCase(Locale.US);
+        String brand = p.brand == null ? "" : p.brand.trim().toLowerCase(Locale.US);
+        return name + "|" + brand;
     }
 
     /** One row: [status A] ingredient name [status B]. */

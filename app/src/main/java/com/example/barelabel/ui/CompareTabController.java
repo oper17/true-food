@@ -1,10 +1,7 @@
 package com.example.barelabel.ui;
 
 import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.LinearLayout;
-import android.widget.Spinner;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -15,58 +12,34 @@ import com.example.barelabel.ScanHistoryRepository;
 import com.example.barelabel.model.ScannedProduct;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 
 /**
- * Owns the Compare tab: two dropdowns populated from scan history and an
- * inline side-by-side comparison of the selected pair.
+ * Owns the Compare tab: renders a side-by-side comparison of a product pair.
+ * The pair comes from the search-result Compare boxes (pinned); opening the
+ * tab directly falls back to the two most recent scans. Each product column
+ * carries Buy and Save actions via the {@link CompareViewBuilder.CompareActionListener}.
  */
 public class CompareTabController {
 
     private final AppCompatActivity activity;
-    private final Spinner spinnerA;
-    private final Spinner spinnerB;
     private final TextView hintText;
     private final LinearLayout resultContainer;
-    private final ArrayAdapter<String> adapterA;
-    private final ArrayAdapter<String> adapterB;
-    private List<ScannedProduct> products = new ArrayList<>();
-    /** Pair pushed from search-result compare boxes; merged ahead of history. */
+    /** Pair pushed from search-result compare boxes; rendered ahead of history. */
     private List<ScannedProduct> pinnedExternal = new ArrayList<>();
-    private boolean programmaticSelection;
+    private CompareViewBuilder.CompareActionListener actionListener;
 
     public CompareTabController(AppCompatActivity activity, View tabContent) {
         this.activity = activity;
-        spinnerA = tabContent.findViewById(R.id.compareSpinnerA);
-        spinnerB = tabContent.findViewById(R.id.compareSpinnerB);
         hintText = tabContent.findViewById(R.id.compareHintText);
         resultContainer = tabContent.findViewById(R.id.compareResultContainer);
+    }
 
-        adapterA = new ArrayAdapter<>(activity,
-                android.R.layout.simple_spinner_item, new ArrayList<>());
-        adapterA.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        adapterB = new ArrayAdapter<>(activity,
-                android.R.layout.simple_spinner_item, new ArrayList<>());
-        adapterB.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-        spinnerA.setAdapter(adapterA);
-        spinnerB.setAdapter(adapterB);
-
-        AdapterView.OnItemSelectedListener listener =
-                new AdapterView.OnItemSelectedListener() {
-                    @Override
-                    public void onItemSelected(AdapterView<?> parent, View view,
-                                               int position, long id) {
-                        if (!programmaticSelection) pinnedExternal.clear();
-                        maybeRender();
-                    }
-
-                    @Override
-                    public void onNothingSelected(AdapterView<?> parent) {
-                        maybeRender();
-                    }
-                };
-        spinnerA.setOnItemSelectedListener(listener);
-        spinnerB.setOnItemSelectedListener(listener);
+    public void setCompareActionListener(CompareViewBuilder.CompareActionListener listener) {
+        this.actionListener = listener;
     }
 
     /**
@@ -80,86 +53,52 @@ public class CompareTabController {
         if (b != null) pinnedExternal.add(b);
     }
 
-    /** Reload the history on a background thread, then repopulate the dropdowns. */
+    /** Drop the pinned pair (e.g. on a fresh search). */
+    public void clearExternal() {
+        pinnedExternal = new ArrayList<>();
+    }
+
+    /** Reload the history on a background thread, then render the pair. */
     public void refresh() {
         new Thread(() -> {
             final List<ScannedProduct> items = ScanHistoryRepository.getAll(activity);
             final List<ScannedProduct> pinned = new ArrayList<>(pinnedExternal);
             activity.runOnUiThread(() -> {
                 // Pinned search picks first, then history (deduped by name+brand).
-                List<ScannedProduct> merged = new ArrayList<>(pinned);
-                java.util.Set<String> seen = new java.util.HashSet<>();
+                List<ScannedProduct> candidates = new ArrayList<>(pinned);
+                Set<String> seen = new HashSet<>();
                 for (ScannedProduct p : pinned) seen.add(productKey(p));
                 for (ScannedProduct p : items) {
-                    if (seen.add(productKey(p))) merged.add(p);
+                    if (seen.add(productKey(p))) candidates.add(p);
                 }
-                products = merged;
-                List<String> names = new ArrayList<>();
-                for (ScannedProduct p : merged) names.add(p.displayName());
-                programmaticSelection = true;
-                try {
-                    adapterA.clear();
-                    adapterA.addAll(names);
-                    adapterB.clear();
-                    adapterB.addAll(names);
-                    if (!pinned.isEmpty()) {
-                        int i = indexOfKey(productKey(pinned.get(0)));
-                        if (i >= 0) spinnerA.setSelection(i);
-                        if (pinned.size() > 1) {
-                            int j = indexOfKey(productKey(pinned.get(1)));
-                            if (j >= 0) spinnerB.setSelection(j);
-                        }
-                    } else if (adapterA.getCount() > 0) {
-                        // Keep selections valid; default to the first two distinct items.
-                        if (spinnerA.getSelectedItemPosition() < 0
-                                || spinnerA.getSelectedItemPosition() >= adapterA.getCount()) {
-                            spinnerA.setSelection(0);
-                        }
-                        int bPos = spinnerB.getSelectedItemPosition();
-                        if (bPos < 0 || bPos >= adapterB.getCount()
-                                || (adapterB.getCount() > 1
-                                    && bPos == spinnerA.getSelectedItemPosition())) {
-                            spinnerB.setSelection(
-                                    spinnerA.getSelectedItemPosition() == 0 ? 1 : 0);
-                        }
-                    }
-                } finally {
-                    programmaticSelection = false;
-                }
-                maybeRender();
+                Set<String> savedKeys = new HashSet<>();
+                for (ScannedProduct p : items) savedKeys.add(productKey(p));
+                render(candidates, savedKeys, !pinned.isEmpty());
             });
         }).start();
     }
 
-    private void maybeRender() {
+    private void render(List<ScannedProduct> candidates, Set<String> savedKeys,
+                        boolean hasPinnedPair) {
         resultContainer.removeAllViews();
-        int i = spinnerA.getSelectedItemPosition();
-        int j = spinnerB.getSelectedItemPosition();
-        boolean valid = i >= 0 && j >= 0
-                && i < products.size() && j < products.size() && i != j;
-        if (!valid) {
+        if (candidates.size() < 2) {
             hintText.setVisibility(View.VISIBLE);
-            hintText.setText(products.size() < 2
-                    ? "Scan at least two products to compare them."
-                    : "Select two different products to compare.");
+            hintText.setText("Scan or save two products to compare them.");
             return;
         }
-        hintText.setVisibility(View.GONE);
+        hintText.setVisibility(hasPinnedPair ? View.GONE : View.VISIBLE);
+        if (!hasPinnedPair) {
+            hintText.setText("Showing your two most recent scans. "
+                    + "Use the Compare boxes in Search to pick any two products.");
+        }
         AnalyticsTracker.compareOpened();
         CompareViewBuilder.buildComparison(activity, resultContainer,
-                products.get(i), products.get(j));
+                candidates.get(0), candidates.get(1), savedKeys, actionListener);
     }
 
     private static String productKey(ScannedProduct p) {
-        String name = p.name == null ? "" : p.name.trim().toLowerCase(java.util.Locale.US);
-        String brand = p.brand == null ? "" : p.brand.trim().toLowerCase(java.util.Locale.US);
+        String name = p.name == null ? "" : p.name.trim().toLowerCase(Locale.US);
+        String brand = p.brand == null ? "" : p.brand.trim().toLowerCase(Locale.US);
         return name + "|" + brand;
-    }
-
-    private int indexOfKey(String key) {
-        for (int i = 0; i < products.size(); i++) {
-            if (productKey(products.get(i)).equals(key)) return i;
-        }
-        return -1;
     }
 }
