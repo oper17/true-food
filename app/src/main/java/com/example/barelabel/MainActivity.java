@@ -101,13 +101,6 @@ public class MainActivity extends AppCompatActivity {
     private AlternatesCardController alternatesController;
     private FoodAutoCompleteManager autoCompleteManager;
 
-    // Main tab panes (Search | Compare | History).
-    private View searchTabContent;
-    private View compareTabContent;
-    private View historyTabContent;
-    private com.example.barelabel.ui.HistoryTabController historyTabController;
-    private com.example.barelabel.ui.CompareTabController compareTabController;
-
     private final Set<String> superiorTerms = new HashSet<>();
 
     private final ActivityResultLauncher<Intent> barcodeLauncher = registerForActivityResult(
@@ -158,34 +151,15 @@ protected void onCreate(Bundle savedInstanceState) {
         scanBarcodeButton.setOnClickListener(v -> openBarcodeScanner());
     }
 
-    setupCategoryFilterPanel();
-    // 4c. Main tabs: Search | Compare | History. Search is the default landing tab.
-    com.google.android.material.tabs.TabLayout tabLayout = findViewById(R.id.mainTabLayout);
-    searchTabContent = findViewById(R.id.mainRootLayout);
-    compareTabContent = findViewById(R.id.compareTabContent);
-    historyTabContent = findViewById(R.id.historyTabContent);
-    if (tabLayout != null) {
-        historyTabController = new com.example.barelabel.ui.HistoryTabController(
-                this, historyTabContent);
-        compareTabController = new com.example.barelabel.ui.CompareTabController(
-                this, compareTabContent);
-        tabLayout.addOnTabSelectedListener(
-                new com.google.android.material.tabs.TabLayout.OnTabSelectedListener() {
-                    @Override
-                    public void onTabSelected(
-                            com.google.android.material.tabs.TabLayout.Tab tab) {
-                        showTab(tab.getPosition());
-                    }
-                    @Override
-                    public void onTabUnselected(
-                            com.google.android.material.tabs.TabLayout.Tab tab) {}
-                    @Override
-                    public void onTabReselected(
-                            com.google.android.material.tabs.TabLayout.Tab tab) {}
-                });
-        showTab(0);
+    // 4b. Scan history button in the header.
+    ImageButton historyButton = findViewById(R.id.historyButton);
+    if (historyButton != null) {
+        historyButton.setOnClickListener(v -> {
+            AnalyticsTracker.historyOpened();
+            startActivity(new Intent(this, HistoryActivity.class));
+        });
     }
-
+setupCategoryFilterPanel();
     // 5. Attach AutoComplete Manager
     // Unbranded completions (offline dictionary) take rank 1-2; USDA fills the rest.
     SuggestionProvider suggestionProvider = new CombinedSuggestionProvider(
@@ -678,30 +652,6 @@ private void updateStickyBar() {
 
 private int dp(int dps) {
     return Math.round(dps * getResources().getDisplayMetrics().density);
-}
-
-/** Switch the visible tab pane: 0 = Search, 1 = Compare, 2 = History. */
-private void showTab(int position) {
-    if (searchTabContent != null) {
-        searchTabContent.setVisibility(position == 0 ? View.VISIBLE : View.GONE);
-    }
-    if (compareTabContent != null) {
-        compareTabContent.setVisibility(position == 1 ? View.VISIBLE : View.GONE);
-    }
-    if (historyTabContent != null) {
-        historyTabContent.setVisibility(position == 2 ? View.VISIBLE : View.GONE);
-    }
-    // The sticky results bar only belongs to the search tab.
-    if (position != 0 && stickyResultsBar != null) {
-        stickyResultsBar.setVisibility(View.GONE);
-    }
-    if (position == 1 && compareTabController != null) {
-        compareTabController.refresh();
-    }
-    if (position == 2 && historyTabController != null) {
-        AnalyticsTracker.historyOpened();
-        historyTabController.refresh();
-    }
 }
 
 private void showFullIngredientsDialog(ProductResult product) {

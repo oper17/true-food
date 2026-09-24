@@ -13,7 +13,6 @@ import android.widget.TextView;
 import androidx.appcompat.app.AlertDialog;
 
 import com.example.barelabel.FlaggedIngredientManager;
-import com.example.barelabel.model.ScannedProduct;
 
 import java.util.Collection;
 
@@ -27,14 +26,9 @@ public final class ProductDetailDialog {
     private ProductDetailDialog() {
     }
 
-    /** Convenience overload for a persisted history entry. */
-    public static void show(Context context, ScannedProduct product) {
-        if (product == null) return;
-        show(context, product.displayName(), product.ingredients, product.flagged);
-    }
-
     public static void show(Context context, String title, String ingredients,
-                            Collection<String> flagged) {        SpannableStringBuilder content = new SpannableStringBuilder();
+                            Collection<String> flagged) {
+        SpannableStringBuilder content = new SpannableStringBuilder();
 
         // Verdict summary line
         boolean isClean = flagged == null || flagged.isEmpty();
