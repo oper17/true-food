@@ -11,11 +11,11 @@ if (localPropertiesFile.exists()) {
 }
 
 android {
-    namespace 'com.example.barelabel'
+    namespace 'com.barelabel.app'
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.example.barelabel'
+        applicationId 'com.barelabel.app'
         minSdk 23
         targetSdk 35
         versionCode 1

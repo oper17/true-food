@@ -6,4 +6,4 @@
 -keepattributes SourceFile,LineNumberTable
 
 # Keep the analytics event taxonomy readable in deobfuscated stack traces.
--keep class com.example.barelabel.AnalyticsTracker { *; }
+-keep class com.barelabel.app.AnalyticsTracker { *; }
