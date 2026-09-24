@@ -3,6 +3,8 @@ package com.example.barelabel.ui;
 import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
 import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
@@ -10,6 +12,7 @@ import android.view.ViewGroup;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
+import com.example.barelabel.FlaggedIngredientManager;
 import com.example.barelabel.R;
 import com.example.barelabel.model.ScannedProduct;
 
@@ -20,18 +23,30 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Builds the side-by-side ingredient comparison table for two history
- * products into a container. Each ingredient row shows a green check (not
- * flagged) or red X (flagged) per product, using the flags stored at scan
- * time. Shared by the Compare tab (inline) — extracted from the old
- * compare bottom sheet.
+ * Builds the side-by-side ingredient comparison table for two products
+ * into a container. Each ingredient row shows one symbol per product:
+ *
+ * <ul>
+ *   <li>green check — ingredient present and clean (not flagged)</li>
+ *   <li>red X — ingredient present and flagged</li>
+ *   <li>leaf — ingredient present and a superior (clean-highlight) ingredient</li>
+ *   <li>gray dash-in-circle — ingredient not present in that product at all</li>
+ * </ul>
+ *
+ * Flag verdicts use the flags stored at scan time; superior matching uses
+ * {@link FlaggedIngredientManager}. A legend explaining the symbols is
+ * rendered at the bottom of the table.
  */
 public final class CompareViewBuilder {
 
     private CompareViewBuilder() {
     }
 
-    /** Clears the container and renders the full comparison table. */
+    private enum Status {
+        ABSENT, CLEAN, FLAGGED, SUPERIOR
+    }
+
+    /** Clears the container and renders the full comparison table + legend. */
     public static void buildComparison(Context context, LinearLayout container,
                                        ScannedProduct a, ScannedProduct b) {
         container.removeAllViews();
@@ -44,25 +59,38 @@ public final class CompareViewBuilder {
         headerRow.addView(productHeader(context, b), columnParams());
         container.addView(headerRow);
 
-        // Divider
-        View divider = new View(context);
-        divider.setBackgroundColor(Color.parseColor("#E5E7EB"));
-        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 1));
-        divParams.topMargin = dp(context, 12);
-        divParams.bottomMargin = dp(context, 4);
-        container.addView(divider, divParams);
+        container.addView(divider(context), dividerParams(context));
 
         // Ingredient rows: A's ingredients in order, then B-only ingredients.
+        Set<String> aKeys = ingredientKeys(a.ingredients);
+        Set<String> bKeys = ingredientKeys(b.ingredients);
         List<String> union = unionIngredients(a.ingredients, b.ingredients);
         for (String ingredient : union) {
             container.addView(ingredientRow(context, ingredient,
-                    isFlagged(ingredient, a.flagged), isFlagged(ingredient, b.flagged)));
+                    statusFor(context, ingredient, a, aKeys),
+                    statusFor(context, ingredient, b, bKeys)));
         }
+
+        container.addView(divider(context), dividerParams(context));
+        container.addView(legendView(context));
     }
 
     private static LinearLayout.LayoutParams columnParams() {
         return new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+    }
+
+    private static View divider(Context context) {
+        View divider = new View(context);
+        divider.setBackgroundColor(Color.parseColor("#E5E7EB"));
+        return divider;
+    }
+
+    private static LinearLayout.LayoutParams dividerParams(Context context) {
+        LinearLayout.LayoutParams divParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(context, 1));
+        divParams.topMargin = dp(context, 12);
+        divParams.bottomMargin = dp(context, 4);
+        return divParams;
     }
 
     /** Name + verdict pill + flagged count, centered in its column. */
@@ -112,13 +140,13 @@ public final class CompareViewBuilder {
 
     /** One row: [status A] ingredient name [status B]. */
     private static LinearLayout ingredientRow(Context context, String ingredient,
-                                              boolean flaggedA, boolean flaggedB) {
+                                              Status statusA, Status statusB) {
         LinearLayout row = new LinearLayout(context);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
         row.setPadding(0, dp(context, 7), 0, dp(context, 7));
 
-        row.addView(statusView(context, flaggedA));
+        row.addView(statusView(context, statusA));
 
         TextView name = new TextView(context);
         name.setText(ingredient);
@@ -130,20 +158,91 @@ public final class CompareViewBuilder {
         nameParams.rightMargin = dp(context, 8);
         row.addView(name, nameParams);
 
-        row.addView(statusView(context, flaggedB));
+        row.addView(statusView(context, statusB));
         return row;
     }
 
-    /** Green check when the ingredient is fine, red X when flagged. */
-    private static TextView statusView(Context context, boolean flagged) {
+    /** Symbol per product: gray dash-in-circle when absent, else by verdict. */
+    private static TextView statusView(Context context, Status status) {
         TextView v = new TextView(context);
-        v.setText(flagged ? "\u2715" : "\u2713");
-        v.setTextSize(18f);
+        switch (status) {
+            case ABSENT:
+                v.setText("\u2296"); // dash inside a circle
+                v.setTextColor(Color.parseColor("#9CA3AF"));
+                break;
+            case FLAGGED:
+                v.setText("\u2715");
+                v.setTextColor(Color.parseColor("#DC2626"));
+                break;
+            case SUPERIOR:
+                v.setText("\uD83C\uDF3F"); // leaf emoji
+                v.setTextColor(Color.parseColor("#15803D"));
+                break;
+            case CLEAN:
+            default:
+                v.setText("\u2713");
+                v.setTextColor(Color.parseColor("#16A34A"));
+                break;
+        }
+        v.setTextSize(status == Status.SUPERIOR ? 16f : 18f);
         v.setTypeface(null, Typeface.BOLD);
-        v.setTextColor(Color.parseColor(flagged ? "#DC2626" : "#16A34A"));
         v.setGravity(Gravity.CENTER);
         v.setWidth(dp(context, 32));
         return v;
+    }
+
+    private static Status statusFor(Context context, String ingredient,
+                                    ScannedProduct p, Set<String> keys) {
+        if (!keys.contains(key(ingredient))) return Status.ABSENT;
+        if (isFlagged(ingredient, p.flagged)) return Status.FLAGGED;
+        if (FlaggedIngredientManager.isSuperiorIngredient(context, ingredient)) {
+            return Status.SUPERIOR;
+        }
+        return Status.CLEAN;
+    }
+
+    /** Legend explaining the four symbols, rendered under the table. */
+    private static TextView legendView(Context context) {
+        TextView legend = new TextView(context);
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        appendLegendItem(sb, "\u2713 Clean", "#16A34A");
+        sb.append("   ");
+        appendLegendItem(sb, "\u2715 Flagged", "#DC2626");
+        sb.append("   ");
+        appendLegendItem(sb, "\uD83C\uDF3F Superior", "#15803D");
+        sb.append("   ");
+        appendLegendItem(sb, "\u2296 Not in product", "#9CA3AF");
+        legend.setText(sb);
+        legend.setTextSize(12f);
+        legend.setTextColor(Color.parseColor("#6B7280"));
+        legend.setGravity(Gravity.CENTER);
+        legend.setPadding(0, dp(context, 4), 0, dp(context, 8));
+        return legend;
+    }
+
+    private static void appendLegendItem(SpannableStringBuilder sb, String text,
+                                         String colorHex) {
+        int start = sb.length();
+        sb.append(text);
+        sb.setSpan(new android.text.style.ForegroundColorSpan(Color.parseColor(colorHex)),
+                start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        sb.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
+                start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private static String key(String ingredient) {
+        return ingredient == null ? "" : ingredient.trim().toLowerCase(Locale.US);
+    }
+
+    /** Lowercase keys of one product's own ingredient list. */
+    private static Set<String> ingredientKeys(String ingredients) {
+        Set<String> keys = new HashSet<>();
+        if (ingredients == null) return keys;
+        for (String raw : ingredients.split(",")) {
+            String t = raw.trim();
+            if (!t.isEmpty()) keys.add(key(t));
+        }
+        return keys;
     }
 
     /** A's ingredients in order, then ingredients only in B. Case-insensitive dedupe. */
@@ -160,8 +259,7 @@ public final class CompareViewBuilder {
         for (String raw : ingredients.split(",")) {
             String t = raw.trim();
             if (t.isEmpty()) continue;
-            String key = t.toLowerCase(Locale.US);
-            if (seen.add(key)) out.add(t);
+            if (seen.add(key(t))) out.add(t);
         }
     }
 
