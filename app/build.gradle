@@ -30,10 +30,43 @@ android {
         buildConfig true
     }
 
-    // Name the built APK true-food.apk instead of the default app-<variant>.apk
+    // Name the built APK barelabel-<variant>.apk instead of the default app-<variant>.apk
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
-            outputFileName = "true-food.apk"
+            outputFileName = "barelabel-${variant.name}.apk"
+        }
+    }
+
+    // Release signing comes from git-ignored local.properties (never commit the keystore):
+    //   RELEASE_KEYSTORE_PATH=/absolute/path/to/barelabel-release.keystore
+    //   RELEASE_KEYSTORE_PASSWORD=...
+    //   RELEASE_KEY_ALIAS=barelabel
+    //   RELEASE_KEY_PASSWORD=...
+    // Generate once with:
+    //   keytool -genkeypair -v -keystore barelabel-release.keystore -alias barelabel \
+    //     -keyalg RSA -keysize 2048 -validity 10000
+    signingConfigs {
+        release {
+            def keystorePath = localProperties.getProperty('RELEASE_KEYSTORE_PATH')
+            if (keystorePath) {
+                storeFile file(keystorePath)
+                storePassword localProperties.getProperty('RELEASE_KEYSTORE_PASSWORD')
+                keyAlias localProperties.getProperty('RELEASE_KEY_ALIAS')
+                keyPassword localProperties.getProperty('RELEASE_KEY_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Only sign when the keystore is configured; otherwise assemble an unsigned APK.
+            if (localProperties.getProperty('RELEASE_KEYSTORE_PATH')) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'),
+                    'proguard-rules.pro'
         }
     }
 }

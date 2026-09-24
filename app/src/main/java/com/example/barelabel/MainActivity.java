@@ -217,6 +217,7 @@ setupCategoryFilterPanel();
     if (verdictCompareBox != null) {
         verdictCompareBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (syncingCompareUi || currentPrimaryResult == null) return;
+            AnalyticsTracker.compareCheckboxToggled(isChecked, "verdict_card");
             toggleComparePick(currentPrimaryResult);
         });
     }
@@ -235,7 +236,11 @@ setupCategoryFilterPanel();
                 });
     }
     if (alternatesController != null) {
-        alternatesController.setSaveListener(this::saveProductToHistory);
+        alternatesController.setSaveListener(p -> {
+            boolean saved = saveProductToHistory(p);
+            if (saved) AnalyticsTracker.productSaved("alternate");
+            return saved;
+        });
     }
     // 5. Attach AutoComplete Manager
     // Unbranded completions (offline dictionary) take rank 1-2; USDA fills the rest.
@@ -814,7 +819,9 @@ private boolean saveScannedToHistory(ScannedProduct p) {
     pr.ingredients = p.ingredients;
     if (p.flagged != null) pr.flagged.addAll(p.flagged);
     pr.gtinUpc = p.gtin == null ? "" : p.gtin;
-    return saveProductToHistory(pr);
+    boolean saved = saveProductToHistory(pr);
+    if (saved) AnalyticsTracker.productSaved("compare");
+    return saved;
 }
 
 /** Two picks made: pin the pair on the Compare tab and switch to it. */
@@ -848,6 +855,7 @@ private void showTab(int position, View searchContent) {
         stickyResultsBar.setVisibility(View.GONE);
     }
     if (position == 1 && compareTabController != null) {
+        AnalyticsTracker.compareTabOpened();
         compareTabController.refresh();
     }
     if (position == 2 && historyTabController != null) {

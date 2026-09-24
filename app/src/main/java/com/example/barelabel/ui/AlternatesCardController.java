@@ -500,6 +500,7 @@ public class AlternatesCardController {
             compareBox.setChecked(comparePickListener.isSelectedForCompare(alt));
             compareBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
                 if (syncingCompareBoxes) return;
+                AnalyticsTracker.compareCheckboxToggled(isChecked, "alternate");
                 comparePickListener.onToggleComparePick(alt);
                 // Host may have rejected the pick (max 2): re-sync to truth.
                 syncCompareBoxes();

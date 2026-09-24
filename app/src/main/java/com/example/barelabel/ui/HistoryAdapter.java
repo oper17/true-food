@@ -14,6 +14,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import com.example.barelabel.AnalyticsTracker;
 import com.example.barelabel.R;
 import com.example.barelabel.model.ScannedProduct;
 
@@ -36,6 +37,8 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
     private final List<ScannedProduct> items = new ArrayList<>();
     private final Set<String> selectedIds = new HashSet<>();
     private boolean selectionMode = false;
+    /** True while programmatically unchecking a rejected (3rd) pick: don't log it. */
+    private boolean suppressCheckLog = false;
 
     public HistoryAdapter(Context context, Listener listener) {
         this.context = context;
@@ -116,7 +119,9 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
         h.checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (isChecked) {
                 if (selectedIds.size() >= 2) {
+                    suppressCheckLog = true;
                     h.checkBox.setChecked(false);
+                    suppressCheckLog = false;
                     Toast.makeText(context, "Pick only 2 products to compare",
                             Toast.LENGTH_SHORT).show();
                     return;
@@ -124,6 +129,9 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
                 selectedIds.add(p.id);
             } else {
                 selectedIds.remove(p.id);
+            }
+            if (!suppressCheckLog) {
+                AnalyticsTracker.compareCheckboxToggled(isChecked, "history");
             }
             listener.onSelectionChanged(selectedIds.size());
         });

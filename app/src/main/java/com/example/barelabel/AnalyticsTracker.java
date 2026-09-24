@@ -109,8 +109,29 @@ public final class AnalyticsTracker {
         log("history_opened", new Bundle());
     }
 
-    /** User opened the product compare sheet from history. */
-    public static void compareOpened() {
-        log("compare_opened", new Bundle());
+    /** User opened the Compare tab (fires once per tab selection). */
+    public static void compareTabOpened() {
+        log("compare_tab_opened", new Bundle());
+    }
+
+    /**
+     * User toggled a compare checkbox.
+     * source: "verdict_card", "alternate", or "history".
+     */
+    public static void compareCheckboxToggled(boolean checked, String source) {
+        Bundle b = new Bundle();
+        b.putBoolean("checked", checked);
+        b.putString("source", source);
+        log("compare_checkbox_toggled", b);
+    }
+
+    /**
+     * User saved a product to history.
+     * source: "alternate" or "compare".
+     */
+    public static void productSaved(String source) {
+        Bundle b = new Bundle();
+        b.putString("source", source);
+        log("product_saved", b);
     }
 }

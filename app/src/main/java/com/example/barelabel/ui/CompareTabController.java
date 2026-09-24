@@ -6,7 +6,6 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.example.barelabel.AnalyticsTracker;
 import com.example.barelabel.R;
 import com.example.barelabel.ScanHistoryRepository;
 import com.example.barelabel.model.ScannedProduct;
@@ -91,7 +90,6 @@ public class CompareTabController {
             hintText.setText("Showing your two most recent scans. "
                     + "Use the Compare boxes in Search to pick any two products.");
         }
-        AnalyticsTracker.compareOpened();
         CompareViewBuilder.buildComparison(activity, resultContainer,
                 candidates.get(0), candidates.get(1), savedKeys, actionListener);
     }
