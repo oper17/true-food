@@ -3,6 +3,8 @@ package com.example.barelabel;
 import android.content.Context;
 import android.util.Log;
 
+import com.example.barelabel.model.Suggestion;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -26,8 +28,8 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
     }
 
     @Override
-    public List<String> fetchSuggestions(String query) throws Exception {
-        List<String> suggestions = new ArrayList<>();
+    public List<Suggestion> fetchSuggestions(String query) throws Exception {
+        List<Suggestion> suggestions = new ArrayList<>();
 
         if (query == null || query.trim().length() < 2) {
             return suggestions;
@@ -61,6 +63,7 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
             jsonPayload.put("pageSize", 8);
 
             JSONArray fields = new JSONArray();
+            fields.put("fdcId");
             fields.put("description");
             fields.put("brandOwner");
             jsonPayload.put("fields", fields);
@@ -94,10 +97,15 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
                     JSONObject item = foods.getJSONObject(i);
                     String description = item.optString("description", "");
                     String brand = item.optString("brandOwner", "");
+                    long fdcId = item.optLong("fdcId", 0);
 
                     String label = brand.isEmpty() ? description : description + " (" + brand + ")";
-                    if (!suggestions.contains(label)) {
-                        suggestions.add(label);
+                    boolean known = false;
+                    for (Suggestion s : suggestions) {
+                        if (s.label.equals(label)) { known = true; break; }
+                    }
+                    if (!known) {
+                        suggestions.add(new Suggestion(label, fdcId));
                     }
                 }
             }

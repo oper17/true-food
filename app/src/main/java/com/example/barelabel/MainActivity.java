@@ -112,6 +112,9 @@ public class MainActivity extends AppCompatActivity {
     private CleanAlternateFinder alternateFinder;
     private AlternatesCardController alternatesController;
     private FoodAutoCompleteManager autoCompleteManager;
+    // USDA record behind the last tapped autocomplete suggestion (0 = none/typed query).
+    private long selectedSuggestionFdcId = 0;
+    private String selectedSuggestionLabel = "";
 
     private final Set<String> superiorTerms = new HashSet<>();
 
@@ -240,7 +243,13 @@ setupCategoryFilterPanel();
             new UnbrandedSuggestionProvider(this), new UsdaSuggestionProvider(this));
     autoCompleteManager = new FoodAutoCompleteManager(this, suggestionProvider);
     autoCompleteManager.attachToEditText(searchBox);
+    autoCompleteManager.setOnSuggestionSelected(suggestion -> {
+        selectedSuggestionFdcId = suggestion.fdcId;
+        selectedSuggestionLabel = suggestion.label;
+    });
     autoCompleteManager.setOnRecentSearchSelected(query -> {
+        selectedSuggestionFdcId = 0;
+        selectedSuggestionLabel = "";
         searchBox.setText(query);
         search();
     });
@@ -386,8 +395,17 @@ setupCategoryFilterPanel();
 
         new Thread(() -> {
             try {
-                // 1. Fetch primary product
-                ProductResult primaryResult = usdaApiClient.searchPrimary(product);
+                // 1. Fetch primary product. A tapped USDA suggestion carries its
+                //    fdcId, so fetch that exact record instead of re-running a
+                //    fuzzy text search on the display label.
+                long fdcId = selectedSuggestionLabel.equals(product)
+                        ? selectedSuggestionFdcId : 0;
+                final boolean fetchedById = fdcId > 0;
+                ProductResult primaryResult = fetchedById
+                        ? usdaApiClient.fetchFoodById(fdcId)
+                        : usdaApiClient.searchPrimary(product);
+                selectedSuggestionFdcId = 0;
+                selectedSuggestionLabel = "";
 
                 // 2. Category: prefer the USDA API's own foodCategory for this product;
                 //    fall back to the rule-based classifier only when the API has none.
@@ -414,7 +432,7 @@ setupCategoryFilterPanel();
                 final boolean finalCategoryIntent = categoryIntent;
                 final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
                 runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
-                        finalFlaggedCategories));
+                        finalFlaggedCategories, fetchedById));
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -460,7 +478,7 @@ setupCategoryFilterPanel();
 
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
-                            Set<String> flaggedCategories) {
+                            Set<String> flaggedCategories, boolean fetchedById) {
         currentPrimaryResult = result;
         clearComparePicks();
     // Unbranded category search (e.g. "cookies"): the top hit is just one random

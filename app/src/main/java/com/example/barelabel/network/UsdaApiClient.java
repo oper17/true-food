@@ -104,19 +104,72 @@ public class UsdaApiClient {
         }
         if (chosen == null) chosen = foods.getJSONObject(0);
 
-        String name = chosen.optString("description", productName);
-        String brandName = chosen.optString("brandName", "");
-        String brandOwner = chosen.optString("brandOwner", "");
+        return buildProductResult(chosen, productName);
+    }
+
+    /**
+     * Fetches one USDA record by its fdcId (the exact record behind a tapped
+     * autocomplete suggestion). Never null; returns ProductResult.notFound()
+     * when the record cannot be retrieved.
+     */
+    public ProductResult fetchFoodById(long fdcId) throws Exception {
+        String cacheKey = "usda_food_" + fdcId;
+
+        // 1. Check local disk cache (7-day TTL)
+        String body = UsdaResponseCache.get(appContext, cacheKey);
+
+        // 2. Fetch from network if cache missed or expired
+        if (body == null) {
+            String url = "https://api.nal.usda.gov/fdc/v1/food/" + fdcId
+                    + "?api_key=" + BuildConfig.USDA_API_KEY;
+
+            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+            try {
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(15000);
+                c.setRequestMethod("GET");
+                c.setRequestProperty("User-Agent", USER_AGENT);
+
+                int code = c.getResponseCode();
+                try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
+                    body = readAll(is);
+                }
+
+                if (code < 200 || code >= 300) {
+                    throw new IOException("HTTP " + code);
+                }
+
+                // Save valid network response to cache
+                if (!TextUtils.isEmpty(body)) {
+                    UsdaResponseCache.put(appContext, cacheKey, body);
+                }
+            } finally {
+                c.disconnect();
+            }
+        }
+
+        if (TextUtils.isEmpty(body)) {
+            return ProductResult.notFound();
+        }
+
+        return buildProductResult(new JSONObject(body), "");
+    }
+
+    /** Builds a ProductResult from one USDA food object (search hit or /food record). */
+    private ProductResult buildProductResult(JSONObject food, String fallbackName) {
+        String name = food.optString("description", fallbackName);
+        String brandName = food.optString("brandName", "");
+        String brandOwner = food.optString("brandOwner", "");
         String brand = !brandOwner.isEmpty() ? brandOwner : brandName;
-        String ingredients = chosen.optString("ingredients", "");
+        String ingredients = food.optString("ingredients", "");
 
         // Process ingredients with FlaggedIngredientManager (JSON Engine)
         FlaggedIngredientManager.MatchResult matchResult =
                 FlaggedIngredientManager.analyzeIngredients(appContext, ingredients);
         ProductResult result = new ProductResult(true, name, brand, ingredients, matchResult);
         // USDA's own category + identifiers for this product (verified on /foods/search)
-        result.foodCategory = chosen.optString("foodCategory", "");
-        result.gtinUpc = chosen.optString("gtinUpc", "");
+        result.foodCategory = food.optString("foodCategory", "");
+        result.gtinUpc = food.optString("gtinUpc", "");
         result.brandName = brandName;
         result.brandOwner = brandOwner;
         return result;

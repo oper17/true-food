@@ -1,5 +1,7 @@
 package com.example.barelabel;
 
+import com.example.barelabel.model.Suggestion;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -23,27 +25,34 @@ public class CombinedSuggestionProvider implements SuggestionProvider {
     }
 
     @Override
-    public List<String> fetchSuggestions(String query) throws Exception {
-        List<String> merged = new ArrayList<>();
+    public List<Suggestion> fetchSuggestions(String query) throws Exception {
+        List<Suggestion> merged = new ArrayList<>();
         lastUnbranded.clear();
 
         for (String s : unbrandedProvider.getCompletions(query, MAX_UNBRANDED)) {
-            if (!merged.contains(s)) {
-                merged.add(s);
+            if (!containsLabel(merged, s)) {
+                merged.add(new Suggestion(s, 0));
                 lastUnbranded.add(s);
             }
         }
 
-        List<String> usdaSuggestions = usdaProvider.fetchSuggestions(query);
+        List<Suggestion> usdaSuggestions = usdaProvider.fetchSuggestions(query);
         if (usdaSuggestions != null) {
-            for (String s : usdaSuggestions) {
-                if (!merged.contains(s)) {
+            for (Suggestion s : usdaSuggestions) {
+                if (!containsLabel(merged, s.label)) {
                     merged.add(s);
                 }
             }
         }
 
         return merged;
+    }
+
+    private static boolean containsLabel(List<Suggestion> list, String label) {
+        for (Suggestion s : list) {
+            if (s.label.equals(label)) return true;
+        }
+        return false;
     }
 
     @Override

@@ -19,12 +19,19 @@ import android.widget.ListPopupWindow;
 import android.widget.PopupWindow;
 import android.widget.TextView;
 
+import com.example.barelabel.model.Suggestion;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class FoodAutoCompleteManager {
+
+    /** Fired when the user taps an autocomplete suggestion (carries the USDA fdcId). */
+    public interface OnSuggestionSelected {
+        void onSelected(Suggestion suggestion);
+    }
 
     /** Fired when the user taps a recent-search bubble. */
     public interface OnRecentSearchSelected {
@@ -37,7 +44,8 @@ public class FoodAutoCompleteManager {
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
 
     private ListPopupWindow popupWindow;
-    private ArrayAdapter<String> adapter;
+    private ArrayAdapter<Suggestion> adapter;
+    private OnSuggestionSelected suggestionSelectedListener;
     private Runnable searchRunnable;
     private PopupWindow recentsPopup;
     private OnRecentSearchSelected recentSearchListener;
@@ -48,6 +56,10 @@ public class FoodAutoCompleteManager {
     public FoodAutoCompleteManager(Context context, SuggestionProvider suggestionProvider) {
         this.context = context;
         this.suggestionProvider = suggestionProvider;
+    }
+
+    public void setOnSuggestionSelected(OnSuggestionSelected listener) {
+        this.suggestionSelectedListener = listener;
     }
 
     public void setOnRecentSearchSelected(OnRecentSearchSelected listener) {
@@ -65,20 +77,22 @@ public class FoodAutoCompleteManager {
 
         // 2. Selection Event: User taps a suggestion
         popupWindow.setOnItemClickListener((AdapterView<?> parent, View view, int position, long id) -> {
-            String selectedItem = adapter.getItem(position);
+            Suggestion selectedItem = adapter.getItem(position);
+            String selectedLabel = selectedItem == null ? "" : selectedItem.label;
             AnalyticsTracker.suggestionTapped(
-                    position, suggestionProvider.isUnbrandedSuggestion(selectedItem));
-            
+                    position, suggestionProvider.isUnbrandedSuggestion(selectedLabel));
+            if (suggestionSelectedListener != null && selectedItem != null) {
+                suggestionSelectedListener.onSelected(selectedItem);
+            }
+
             // Enable suppression guard before updating text programmatically
             isSuppressingSuggestions = true;
-            
+
             cancelPendingSearch();
 
             // Set text into EditText without triggering auto-complete flow
-            editText.setText(selectedItem);
-            if (selectedItem != null) {
-                editText.setSelection(selectedItem.length()); // Move cursor to end
-            }
+            editText.setText(selectedLabel);
+            editText.setSelection(selectedLabel.length()); // Move cursor to end
 
             // Immediately dismiss popup and release focus/keyboard
             popupWindow.dismiss();
@@ -131,7 +145,7 @@ public class FoodAutoCompleteManager {
                 // Debounced API call (300ms)
                 searchRunnable = () -> executor.execute(() -> {
                     try {
-                        List<String> suggestions = suggestionProvider.fetchSuggestions(query);
+                        List<Suggestion> suggestions = suggestionProvider.fetchSuggestions(query);
                         handler.post(() -> renderSuggestions(suggestions, editText));
                     } catch (Exception e) {
                         e.printStackTrace();
@@ -157,7 +171,7 @@ public class FoodAutoCompleteManager {
 
     private static final int MAX_SUGGESTIONS = 5;
 
-    private void renderSuggestions(List<String> suggestions, EditText editText) {
+    private void renderSuggestions(List<Suggestion> suggestions, EditText editText) {
         // Prevent popup rendering if view lost focus or selection was made
         if (isSuppressingSuggestions || !editText.hasFocus()) {
             popupWindow.dismiss();
@@ -166,7 +180,7 @@ public class FoodAutoCompleteManager {
 
         if (suggestions != null && !suggestions.isEmpty()) {
             dismissRecentsPopup();
-            List<String> capped = suggestions.size() > MAX_SUGGESTIONS
+            List<Suggestion> capped = suggestions.size() > MAX_SUGGESTIONS
                     ? suggestions.subList(0, MAX_SUGGESTIONS)
                     : suggestions;
             adapter.clear();

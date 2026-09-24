@@ -1,5 +1,7 @@
 package com.example.barelabel;
 
+import com.example.barelabel.model.Suggestion;
+
 import java.util.List;
 
 /**
@@ -7,7 +9,7 @@ import java.util.List;
  * Implementations can fetch from USDA API, local database, or cache.
  */
 public interface SuggestionProvider {
-    List<String> fetchSuggestions(String query) throws Exception;
+    List<Suggestion> fetchSuggestions(String query) throws Exception;
 
     /** Whether a returned suggestion came from the offline unbranded dictionary. */
     default boolean isUnbrandedSuggestion(String suggestion) {
