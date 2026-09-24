@@ -52,7 +52,8 @@
       "malt extract",
       "malt syrup",
       "malt flavoring",
-      "malt vinegar"
+      "malt vinegar",
+      "maida"
     ]
   },
   "Non-Vegetarian": {
@@ -242,13 +243,19 @@
       "hydrogenated palm oil",
       "hydrogenated soybean oil",
       "partially hydrogenated soybean oil",
-      "partially hydrogenated cottonseed oil"
+      "partially hydrogenated cottonseed oil",
+      "corn oil",
+      "palm oil",
+      "palm kernel oil",
+      "canola oil"
     ]
   },
   "Processed Sweeteners & Fibers": {
     "default_enabled": true,
     "ingredients": [
-      "isomalto-oligosaccharide"
+      "isomalto-oligosaccharide",
+      "high fructose corn syrup",
+      "corn syrup"
     ]
   }
 }
