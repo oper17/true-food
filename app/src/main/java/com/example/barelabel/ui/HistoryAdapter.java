@@ -6,10 +6,8 @@ import android.text.TextUtils;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.CheckBox;
 import android.widget.ImageButton;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
@@ -18,24 +16,22 @@ import com.example.barelabel.R;
 import com.example.barelabel.model.ScannedProduct;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
-/** RecyclerView adapter for the scan-history list, with an optional 2-pick compare mode. */
+/**
+ * RecyclerView adapter for the History tab: newest-first rows with a
+ * CLEAN/DIRTY pill, a brand/timestamp sub-line, and an X button to delete.
+ */
 public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHolder> {
 
     public interface Listener {
         void onItemClicked(ScannedProduct product);
         void onDeleteClicked(ScannedProduct product);
-        void onSelectionChanged(int selectedCount);
     }
 
     private final Context context;
     private final Listener listener;
     private final List<ScannedProduct> items = new ArrayList<>();
-    private final Set<String> selectedIds = new HashSet<>();
-    private boolean selectionMode = false;
 
     public HistoryAdapter(Context context, Listener listener) {
         this.context = context;
@@ -45,39 +41,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
     public void setItems(List<ScannedProduct> newItems) {
         items.clear();
         if (newItems != null) items.addAll(newItems);
-        selectedIds.clear();
         notifyDataSetChanged();
-    }
-
-    public void setSelectionMode(boolean enabled) {
-        selectionMode = enabled;
-        selectedIds.clear();
-        notifyDataSetChanged();
-        listener.onSelectionChanged(0);
-    }
-
-    public boolean isSelectionMode() {
-        return selectionMode;
-    }
-
-    /** Selected products in list order. */
-    public List<ScannedProduct> getSelected() {
-        List<ScannedProduct> out = new ArrayList<>();
-        for (ScannedProduct p : items) {
-            if (selectedIds.contains(p.id)) out.add(p);
-        }
-        return out;
-    }
-
-    public void removeItem(String id) {
-        for (int i = 0; i < items.size(); i++) {
-            if (items.get(i).id.equals(id)) {
-                items.remove(i);
-                selectedIds.remove(id);
-                notifyItemRemoved(i);
-                break;
-            }
-        }
     }
 
     @NonNull
@@ -104,44 +68,8 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
         h.pill.setBackgroundResource(clean ? R.drawable.chip_clean_background
                 : R.drawable.chip_dirty_background);
 
-        h.checkBox.setVisibility(selectionMode ? View.VISIBLE : View.GONE);
-        h.deleteButton.setVisibility(selectionMode ? View.GONE : View.VISIBLE);
-        h.checkBox.setOnCheckedChangeListener(null);
-        h.checkBox.setChecked(selectedIds.contains(p.id));
-
-        boolean hasIngredients = !TextUtils.isEmpty(p.ingredients);
-        h.checkBox.setEnabled(hasIngredients);
-        h.itemView.setAlpha(hasIngredients || !selectionMode ? 1f : 0.5f);
-
-        h.checkBox.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (isChecked) {
-                if (selectedIds.size() >= 2) {
-                    h.checkBox.setChecked(false);
-                    Toast.makeText(context, "Pick only 2 products to compare",
-                            Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                selectedIds.add(p.id);
-            } else {
-                selectedIds.remove(p.id);
-            }
-            listener.onSelectionChanged(selectedIds.size());
-        });
-
         h.deleteButton.setOnClickListener(v -> listener.onDeleteClicked(p));
-
-        h.itemView.setOnClickListener(v -> {
-            if (selectionMode) {
-                if (!hasIngredients) {
-                    Toast.makeText(context, "No ingredients saved for this product",
-                            Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                h.checkBox.setChecked(!h.checkBox.isChecked());
-            } else {
-                listener.onItemClicked(p);
-            }
-        });
+        h.itemView.setOnClickListener(v -> listener.onItemClicked(p));
     }
 
     @Override
@@ -152,7 +80,6 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
     static class ViewHolder extends RecyclerView.ViewHolder {
         TextView name, subLine, pill;
         ImageButton deleteButton;
-        CheckBox checkBox;
 
         ViewHolder(View itemView) {
             super(itemView);
@@ -160,7 +87,6 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
             subLine = itemView.findViewById(R.id.historySubLine);
             pill = itemView.findViewById(R.id.historyVerdictPill);
             deleteButton = itemView.findViewById(R.id.historyDeleteButton);
-            checkBox = itemView.findViewById(R.id.historySelectCheckBox);
         }
     }
 
