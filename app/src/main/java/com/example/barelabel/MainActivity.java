@@ -51,7 +51,6 @@ import java.util.Set;
 
 import com.example.barelabel.model.AlternateSearchResult;
 import com.example.barelabel.model.ProductResult;
-import com.example.barelabel.model.ScannedProduct;
 import com.example.barelabel.network.UsdaApiClient;
 import com.example.barelabel.FlaggedIngredientManager;
 import com.example.barelabel.search.CleanAlternateFinder;
@@ -109,23 +108,6 @@ public class MainActivity extends AppCompatActivity {
     private com.example.barelabel.ui.HistoryTabController historyTabController;
     private com.example.barelabel.ui.CompareTabController compareTabController;
 
-    // Compare-from-search: up to 2 products picked from the search results.
-    private static class ComparePick {
-        final ProductResult source;
-        final ScannedProduct product;
-        ComparePick(ProductResult source, ScannedProduct product) {
-            this.source = source;
-            this.product = product;
-        }
-    }
-    private final List<ComparePick> comparePicks = new ArrayList<>();
-    private boolean lastSearchWasBarcode = false;
-    private boolean lastCategoryIntent = false;
-    private boolean barcodeSearchPending = false;
-    private Button compareFromSearchButton;
-    private Button primaryCompareToggle;
-    private ProductResult visiblePrimaryResult;
-
     private final Set<String> superiorTerms = new HashSet<>();
 
     private final ActivityResultLauncher<Intent> barcodeLauncher = registerForActivityResult(
@@ -169,18 +151,6 @@ protected void onCreate(Bundle savedInstanceState) {
             product -> openShoppingSearch(product));
     alternatesController.setSuperiorTerms(superiorTerms);
     alternatesController.setOnClearFilters(this::clearAllFiltersAndSearch);
-    alternatesController.setComparePickListener(
-            new AlternatesCardController.ComparePickListener() {
-                @Override
-                public boolean isSelectedForCompare(ProductResult p) {
-                    return isPickedForCompare(p);
-                }
-
-                @Override
-                public void onToggleComparePick(ProductResult p) {
-                    toggleComparePick(p);
-                }
-            });
 
     // 4. Setup Barcode Scanner Button
     ImageButton scanBarcodeButton = findViewById(R.id.scanBarcodeButton);
@@ -297,11 +267,6 @@ protected void onCreate(Bundle savedInstanceState) {
         stickyResultsBar = findViewById(R.id.stickyResultsBar);
         stickyResultsText = findViewById(R.id.stickyResultsText);
         verdictChipsContainer = findViewById(R.id.verdictChipsContainer);
-        compareFromSearchButton = findViewById(R.id.compareFromSearchButton);
-        if (compareFromSearchButton != null) {
-            compareFromSearchButton.setOnClickListener(v -> runCompareFromSearch());
-        }
-        primaryCompareToggle = findViewById(R.id.primaryCompareToggle);
     }
 
     private void loadSuperiorTerms() {
@@ -352,16 +317,6 @@ protected void onCreate(Bundle savedInstanceState) {
         AnalyticsTracker.searchPerformed(product.length());
         RecentSearches.add(this, product);
 
-        // A new search invalidates any compare picks from the previous results.
-        comparePicks.clear();
-        updateCompareFromSearchButton();
-        updatePrimaryCompareToggle();
-
-        // Barcode lookups funnel through search(); remember the origin for the
-        // compare-from-search button rule.
-        final boolean isBarcodeSearch = barcodeSearchPending;
-        barcodeSearchPending = false;
-
         // Collapse the filter panel into its summary bar once a search is issued.
         if (categoryFilterPanel != null && filterSummaryBar != null) {
             categoryFilterPanel.setVisibility(View.GONE);
@@ -408,11 +363,8 @@ protected void onCreate(Bundle savedInstanceState) {
                 final String finalCategory = foodType;
                 final boolean finalCategoryIntent = categoryIntent;
                 final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
-                runOnUiThread(() -> {
-                    lastSearchWasBarcode = isBarcodeSearch;
-                    showResult(primaryResult, finalCategory, finalCategoryIntent,
-                            finalFlaggedCategories);
-                });
+                runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
+                        finalFlaggedCategories));
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
@@ -459,7 +411,6 @@ protected void onCreate(Bundle savedInstanceState) {
 
     private void showResult(ProductResult result, String foodType, boolean categoryIntent,
                             Set<String> flaggedCategories) {
-    lastCategoryIntent = categoryIntent;
     // Unbranded category search (e.g. "cookies"): the top hit is just one random
     // branded product in the category, not what the user asked about, so hide the
     // primary verdict card and show only the clean-choices card.
@@ -467,7 +418,6 @@ protected void onCreate(Bundle savedInstanceState) {
         if (resultCard != null) resultCard.setVisibility(View.GONE);
         alternatesController.show(foodType, true, true, flaggedCategories, countActiveFilters());
         updateStickyBar();
-        updateCompareFromSearchButton();
         return;
     }
 
@@ -493,19 +443,6 @@ protected void onCreate(Bundle savedInstanceState) {
             viewIngredientsButton.setOnClickListener(v -> showFullIngredientsDialog(result));
         } else {
             viewIngredientsButton.setVisibility(View.GONE);
-        }
-    }
-
-    // "+ Compare" toggle for the primary product.
-    if (primaryCompareToggle != null) {
-        if (result != null && result.found && !TextUtils.isEmpty(result.ingredients)) {
-            primaryCompareToggle.setVisibility(View.VISIBLE);
-            visiblePrimaryResult = result;
-            updatePrimaryCompareToggle();
-            primaryCompareToggle.setOnClickListener(v -> toggleComparePick(result));
-        } else {
-            primaryCompareToggle.setVisibility(View.GONE);
-            visiblePrimaryResult = null;
         }
     }
 
@@ -630,7 +567,6 @@ protected void onCreate(Bundle savedInstanceState) {
     alternatesController.show(foodType, categoryIntent, isClean, flaggedCategories,
             countActiveFilters());
     updateStickyBar();
-    updateCompareFromSearchButton();
 }
 
 /** Cached flagged-category names from flagged_ingredients.json. */
@@ -768,94 +704,6 @@ private void showTab(int position) {
     }
 }
 
-/** Toggle a search result (primary or alternate) in the compare pick list (max 2). */
-private void toggleComparePick(ProductResult source) {
-    if (source == null || TextUtils.isEmpty(source.ingredients)) return;
-    for (int i = 0; i < comparePicks.size(); i++) {
-        if (comparePicks.get(i).source == source) {
-            comparePicks.remove(i);
-            onComparePicksChanged();
-            return;
-        }
-    }
-    if (comparePicks.size() >= 2) {
-        Toast.makeText(this, "Pick up to 2 products to compare", Toast.LENGTH_SHORT).show();
-        return;
-    }
-    comparePicks.add(new ComparePick(source, ScannedProduct.fromProductResult(source)));
-    onComparePicksChanged();
-}
-
-private boolean isPickedForCompare(ProductResult source) {
-    if (source == null) return false;
-    for (ComparePick pick : comparePicks) {
-        if (pick.source == source) return true;
-    }
-    return false;
-}
-
-private void onComparePicksChanged() {
-    updatePrimaryCompareToggle();
-    if (alternatesController != null) alternatesController.refreshCompareSelection();
-    updateCompareFromSearchButton();
-}
-
-private void updatePrimaryCompareToggle() {
-    if (primaryCompareToggle == null
-            || primaryCompareToggle.getVisibility() != View.VISIBLE
-            || visiblePrimaryResult == null) return;
-    boolean picked = isPickedForCompare(visiblePrimaryResult);
-    primaryCompareToggle.setText(picked ? "✓ Selected for compare" : "+ Compare");
-}
-
-/**
- * Compare button on the search tab: visible with 2 picks; with 1 pick only
- * for barcode or branded searches, paired against the top clean alternate.
- */
-private void updateCompareFromSearchButton() {
-    if (compareFromSearchButton == null) return;
-    int n = comparePicks.size();
-    boolean show = false;
-    String label = "Compare";
-    if (n == 2) {
-        show = true;
-        label = "Compare 2 products";
-    } else if (n == 1 && (lastSearchWasBarcode || !lastCategoryIntent)) {
-        if (alternatesController != null && alternatesController.getTopAlternate() != null) {
-            show = true;
-            label = "Compare with clean alternative";
-        }
-    }
-    compareFromSearchButton.setVisibility(show ? View.VISIBLE : View.GONE);
-    compareFromSearchButton.setText(label);
-}
-
-/** Jump to the Compare tab with the picked product(s). */
-private void runCompareFromSearch() {
-    if (comparePicks.isEmpty()) return;
-    ScannedProduct a = comparePicks.get(0).product;
-    ScannedProduct b;
-    if (comparePicks.size() >= 2) {
-        b = comparePicks.get(1).product;
-    } else {
-        ProductResult alt = alternatesController != null
-                ? alternatesController.getTopAlternate() : null;
-        if (alt == null) {
-            Toast.makeText(this, "No clean alternative found to compare against",
-                    Toast.LENGTH_SHORT).show();
-            return;
-        }
-        b = ScannedProduct.fromProductResult(alt);
-    }
-    com.google.android.material.tabs.TabLayout tabLayout = findViewById(R.id.mainTabLayout);
-    if (tabLayout != null && tabLayout.getTabAt(1) != null) {
-        tabLayout.getTabAt(1).select();
-    }
-    if (compareTabController != null) {
-        compareTabController.compareExternal(a, b);
-    }
-}
-
 private void showFullIngredientsDialog(ProductResult product) {
     String title = product.name;
     if (!TextUtils.isEmpty(product.brand)) {
@@ -905,7 +753,6 @@ private void showFullIngredientsDialog(ProductResult product) {
             runOnUiThread(() -> {
                 if (progress != null) progress.setVisibility(View.GONE);
                 searchBox.setText(finalProductName);
-                barcodeSearchPending = true;
                 search();
             });
         }).start();
