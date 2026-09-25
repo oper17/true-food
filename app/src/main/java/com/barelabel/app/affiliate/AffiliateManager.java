@@ -2,6 +2,7 @@ package com.barelabel.app.affiliate;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.util.Base64;
 import android.util.Log;
 
 import org.json.JSONArray;
@@ -16,6 +17,10 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyFactory;
+import java.security.PublicKey;
+import java.security.Signature;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -29,8 +34,10 @@ import java.util.Map;
  *   1. The bundled asset (ships with the APK).
  *   2. A cached remote copy, refreshed in the background from a public
  *      raw-GitHub URL (no auth needed). A remote copy is used only when
- *      its "version" is newer than the bundled one; every failure mode
- *      falls back to whatever is already loaded.
+ *      its detached RSA signature verifies against the key in
+ *      {@link AffiliateConfig} AND its "version" is newer than the loaded
+ *      one; every failure mode falls back to whatever is already loaded.
+ *      Only https:// mapping URLs are ever opened.
  *
  * Resolution order per product:
  *   1. Curated direct retailer URLs whose name/brand match the product.
@@ -43,6 +50,7 @@ public final class AffiliateManager {
     private static final String TAG = "AffiliateManager";
     private static final String ASSET_FILE = "affiliate_mappings.json";
     private static final String CACHE_FILE = "affiliate_mappings_remote.json";
+    private static final String CACHE_SIG_FILE = "affiliate_mappings_remote.json.sig";
     private static final String PREFS = "affiliate_prefs";
     private static final String KEY_LAST_CHECK = "remote_last_check";
 
@@ -82,27 +90,68 @@ public final class AffiliateManager {
         }
         prefs.edit().putLong(KEY_LAST_CHECK, now).apply();
 
-        HttpURLConnection conn = (HttpURLConnection) new URL(
-                AffiliateConfig.REMOTE_MAPPINGS_URL + "?t=" + now / 1000)
-                .openConnection();
-        conn.setUseCaches(false); // raw.githubusercontent.com caches aggressively
-        conn.setConnectTimeout(10_000);
-        conn.setReadTimeout(10_000);
-        conn.setRequestProperty("Accept", "application/json");
-        if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return;
-
-        String json;
-        try (InputStream in = conn.getInputStream()) {
-            json = readFully(in);
-        } finally {
-            conn.disconnect();
+        // Fail closed: the file is applied only if its detached RSA
+        // signature verifies. A missing/bad signature (e.g. repo compromise
+        // or MITM) keeps the current mappings instead of applying evil URLs.
+        byte[] jsonBytes = fetchBytes(
+                AffiliateConfig.REMOTE_MAPPINGS_URL + "?t=" + now / 1000);
+        if (jsonBytes == null) return;
+        byte[] sigBytes = fetchBytes(
+                AffiliateConfig.REMOTE_MAPPINGS_SIG_URL + "?t=" + now / 1000);
+        if (sigBytes == null || !verifySignature(jsonBytes, sigBytes)) {
+            Log.w(TAG, "remote mappings signature missing/invalid; keeping current");
+            return;
         }
-        ParsedMappings parsed = parseMappingsJson(json);
+
+        ParsedMappings parsed =
+                parseMappingsJson(new String(jsonBytes, StandardCharsets.UTF_8));
         AffiliateManager mgr = get(app);
         if (parsed.version > mgr.mappingVersion && !parsed.entries.isEmpty()) {
-            writeCacheFile(app, json);
+            writeCacheFile(app, CACHE_FILE, jsonBytes);
+            writeCacheFile(app, CACHE_SIG_FILE, sigBytes);
             mgr.applyParsed(parsed);
-            Log.i(TAG, "applied remote affiliate mappings v" + parsed.version);
+            Log.i(TAG, "applied verified remote affiliate mappings v"
+                    + parsed.version);
+        }
+    }
+
+    /** GET bytes; null on any failure (offline, non-200, timeout). */
+    private static byte[] fetchBytes(String url) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setUseCaches(false); // raw.githubusercontent.com caches aggressively
+            conn.setConnectTimeout(10_000);
+            conn.setReadTimeout(10_000);
+            conn.setRequestProperty("Accept",
+                    url.endsWith(".sig") ? "application/octet-stream"
+                            : "application/json");
+            if (conn.getResponseCode() != HttpURLConnection.HTTP_OK) return null;
+            try (InputStream in = conn.getInputStream()) {
+                return readFully(in);
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "fetch failed: " + url, e);
+            return null;
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+
+    /** RSA-SHA256 verification of the mappings file against the embedded key. */
+    private static boolean verifySignature(byte[] data, byte[] signature) {
+        try {
+            byte[] der = Base64.decode(
+                    AffiliateConfig.MAPPINGS_PUBLIC_KEY_B64, Base64.DEFAULT);
+            PublicKey key = KeyFactory.getInstance("RSA")
+                    .generatePublic(new X509EncodedKeySpec(der));
+            Signature sig = Signature.getInstance("SHA256withRSA");
+            sig.initVerify(key);
+            sig.update(data);
+            return sig.verify(signature);
+        } catch (Exception e) {
+            Log.w(TAG, "mappings signature verification error", e);
+            return false;
         }
     }
 
@@ -164,7 +213,11 @@ public final class AffiliateManager {
                 AffiliateProvider provider = providers.get(rm.retailerId);
                 if (provider == null || !provider.supportsDirectLinks()) continue;
                 String url = provider.directUrl(rm.url);
-                if (url.isEmpty()) continue;
+                if (!isHttpsUrl(url)) {
+                    Log.w(TAG, "dropping non-https mapping URL for "
+                            + rm.retailerId);
+                    continue;
+                }
                 direct.add(new AffiliateLink(rm.retailerId,
                         provider.displayName(), url, true));
             }
@@ -180,6 +233,13 @@ public final class AffiliateManager {
                     url, false));
         }
         return fallback;
+    }
+
+    /** Only https mapping URLs are ever opened; everything else is dropped. */
+    private static boolean isHttpsUrl(String url) {
+        if (url == null) return false;
+        String lower = url.toLowerCase(Locale.US);
+        return lower.startsWith("https://");
     }
 
     /** Version of the loaded mapping file; 0 when the file is missing. */
@@ -204,19 +264,32 @@ public final class AffiliateManager {
 
     private ParsedMappings loadBundled() {
         try {
-            return parseMappingsJson(
-                    readFully(appContext.getAssets().open(ASSET_FILE)));
+            byte[] bytes = readFully(appContext.getAssets().open(ASSET_FILE));
+            return parseMappingsJson(new String(bytes, StandardCharsets.UTF_8));
         } catch (Exception e) {
             Log.w(TAG, "bundled affiliate_mappings.json missing/unreadable", e);
             return new ParsedMappings();
         }
     }
 
+    /**
+     * Cached remote copy, used only if its stored signature still verifies.
+     * A cache written by the pre-signature app version has no .sig and is
+     * ignored — the next background refresh re-fetches signed copies.
+     */
     private ParsedMappings loadCachedRemote() {
-        File f = new File(appContext.getFilesDir(), CACHE_FILE);
-        if (!f.exists()) return null;
-        try (FileInputStream in = new FileInputStream(f)) {
-            return parseMappingsJson(readFully(in));
+        File dir = appContext.getFilesDir();
+        File f = new File(dir, CACHE_FILE);
+        File sig = new File(dir, CACHE_SIG_FILE);
+        if (!f.exists() || !sig.exists()) return null;
+        try (FileInputStream in = new FileInputStream(f);
+             FileInputStream sigIn = new FileInputStream(sig)) {
+            byte[] bytes = readFully(in);
+            if (!verifySignature(bytes, readFully(sigIn))) {
+                Log.w(TAG, "cached remote mappings signature invalid; ignoring");
+                return null;
+            }
+            return parseMappingsJson(new String(bytes, StandardCharsets.UTF_8));
         } catch (Exception e) {
             Log.w(TAG, "cached remote mappings unreadable; ignoring", e);
             return null;
@@ -224,25 +297,26 @@ public final class AffiliateManager {
     }
 
     /** Write-temp-then-rename so a crash mid-write never corrupts the cache. */
-    private static void writeCacheFile(Context app, String json) throws IOException {
+    private static void writeCacheFile(Context app, String name, byte[] data)
+            throws IOException {
         File dir = app.getFilesDir();
-        File tmp = new File(dir, CACHE_FILE + ".tmp");
+        File tmp = new File(dir, name + ".tmp");
         try (FileOutputStream out = new FileOutputStream(tmp)) {
-            out.write(json.getBytes(StandardCharsets.UTF_8));
+            out.write(data);
         }
-        if (!tmp.renameTo(new File(dir, CACHE_FILE))) {
-            throw new IOException("failed to publish remote mappings cache");
+        if (!tmp.renameTo(new File(dir, name))) {
+            throw new IOException("failed to publish " + name);
         }
     }
 
-    private static String readFully(InputStream in) throws IOException {
+    private static byte[] readFully(InputStream in) throws IOException {
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         byte[] buf = new byte[8192];
         int n;
         while ((n = in.read(buf)) >= 0) {
             out.write(buf, 0, n);
         }
-        return out.toString("UTF-8");
+        return out.toByteArray();
     }
 
     /** Parsed form of one mapping file; version 0 / empty when unreadable. */

@@ -189,7 +189,9 @@ public final class AffiliateNavigator {
         CustomTabsIntent customTabsIntent = new CustomTabsIntent.Builder()
                 .setDefaultColorSchemeParams(colorParams)
                 .setShowTitle(true)
-                .setUrlBarHidingEnabled(true)
+                // Keep the URL bar visible: these are affiliate shopping
+                // links, and the user should always see where they are.
+                .setUrlBarHidingEnabled(false)
                 .build();
         try {
             customTabsIntent.launchUrl(activity, Uri.parse(url));
