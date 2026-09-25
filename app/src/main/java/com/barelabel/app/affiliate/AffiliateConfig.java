@@ -75,7 +75,10 @@ public final class AffiliateConfig {
      */
     public static final String REMOTE_MAPPINGS_URL =
             "https://raw.githubusercontent.com/slplakshmipriya/true-food"
-                    + "/main/app/src/main/assets/affiliate_mappings.json";
+                    // TEST ONLY — points at this branch so the signature
+                    // verification path can be exercised before merge.
+                    // REVERT to /main/ before merging to main.
+                    + "/security-fixes/app/src/main/assets/affiliate_mappings.json";
 
     /** Minimum time between remote mapping checks. */
     public static final long REMOTE_CHECK_INTERVAL_MS = 24L * 60 * 60 * 1000;

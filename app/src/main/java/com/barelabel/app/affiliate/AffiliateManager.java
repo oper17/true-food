@@ -105,6 +105,7 @@ public final class AffiliateManager {
 
         ParsedMappings parsed =
                 parseMappingsJson(new String(jsonBytes, StandardCharsets.UTF_8));
+        Log.i(TAG, "remote mappings signature verified (v" + parsed.version + ")");
         AffiliateManager mgr = get(app);
         if (parsed.version > mgr.mappingVersion && !parsed.entries.isEmpty()) {
             writeCacheFile(app, CACHE_FILE, jsonBytes);
