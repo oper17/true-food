@@ -69,7 +69,9 @@ public final class AffiliateConfig {
      * Remote mapping file for in-place updates. The repo is public, so
      * reads need no auth — the app fetches this with a plain HTTPS GET.
      * Updating the file (and bumping "version") refreshes every installed
-     * app within a day, no Play Store update required.
+     * app within a day, no Play Store update required. You must also sign
+     * the file with tools/sign_mappings.sh and commit the .sig — unsigned
+     * files are ignored by the app.
      */
     public static final String REMOTE_MAPPINGS_URL =
             "https://raw.githubusercontent.com/slplakshmipriya/true-food"
@@ -77,6 +79,23 @@ public final class AffiliateConfig {
 
     /** Minimum time between remote mapping checks. */
     public static final long REMOTE_CHECK_INTERVAL_MS = 24L * 60 * 60 * 1000;
+
+    /** Detached RSA signature for the remote mapping file (raw bytes). */
+    public static final String REMOTE_MAPPINGS_SIG_URL =
+            REMOTE_MAPPINGS_URL + ".sig";
+
+    /**
+     * RSA-2048 public key (X.509 DER, base64) verifying the remote mapping
+     * file's signature. The private key lives OFF-device with the publisher;
+     * only correctly signed files are applied, so neither a repo compromise
+     * nor a MITM can push malicious retailer URLs to installed apps.
+     */
+    public static final String MAPPINGS_PUBLIC_KEY_B64 =
+            "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAynBg2ShNFXSMMdvTw6RJgX/"
+                    + "yY3zpNgfrxSYHxXIcAh9Z7PWjT3ZlsokiG2INBqc/YAqIF2zRAIo/3o6zp6xFI2i754Q0zHJ3e3MMxVDvOew"
+                    + "jt7TPTBcnksOfKDnfadu7G3xF1nwxxpcVS6a1OrVdlv6Kj+zDeTgrgG1hNVhuebbTBTKzJBD2Pu2UdDGNKVO4C"
+                    + "sOsku2t8k//xcjuoPGh/4R6ARmWl6lghc3XzqnpjMxis7TvjMv7MpYpLUQh1ysypSooj0HtvrhIgXKzjwHqRF"
+                    + "2f7ncmaYfRCEIid3BPsw/74DH0/lvEUHeAs4kKkI0ZtmoTrpqohWbdXbJl0y/7xQIDAQAB";
 
     /** User's preferred retailer for Buy links; "amazon" until changed. */
     public static String getPreferredRetailer(Context context) {
