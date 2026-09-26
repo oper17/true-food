@@ -1,10 +1,10 @@
 # BareLabel UAT Plan — debug driver
 
-64 cases. Each case states its goal in one line, the exact driver commands to
-run, and what to observe in the result / `getState` output. Run via
-`uat/commands.json` (see `uat/README.md`): push the case's commands, keep the
-app in the foreground, collect results from the webhook, evaluate against
-**Expect**.
+72 cases (63 driver-driven + 9 manual-only). Each case states its goal in one
+line, the exact driver commands to run, and what to observe in the result /
+`getState` output. Run via `uat/commands.json` (see `uat/README.md`): push
+the case's commands, keep the app in the foreground, collect results from the
+webhook, evaluate against **Expect**.
 
 Conventions: command `id`s below are suggestions (`<case>a/b/c…`); they must
 be unique within a feed push. `getState` fields referenced: `status`,
@@ -250,22 +250,22 @@ synonyms of *flagged* concepts only.
 
 ## 7. Pricing prototype
 
-### UAT-060 — First rows show live prices in the right format
+### UAT-065 — First rows show live prices in the right format
 - **Goal:** The pricing prototype renders cheapest-in-stock offers under exact rows.
 - **Commands:** `search "bread"` → `wait 10000` → `getState`
 - **Expect:** Rows that have prices match `$X.XX · Merchant` format; price appears under the meta line, not inside the ingredient text.
 
-### UAT-061 — Only the first 3 exact rows are priced
+### UAT-066 — Only the first 3 exact rows are priced
 - **Goal:** Prototype scope is exactly 3 rows; no more, no crash on the rest.
 - **Commands:** `search "bread"` → `wait 10000` → `getState`
 - **Expect:** At most the first 3 exact rows carry prices; rows 4+ show Buy without a price.
 
-### UAT-062 — Missing price data is silent, not broken
+### UAT-067 — Missing price data is silent, not broken
 - **Goal:** Uneven UPCitemdb coverage must not produce "null" text or broken rows.
 - **Commands:** `search "bread"` → `wait 10000` → `getState`
 - **Expect:** Rows without prices render normally; no "null", no "$0.00", no crash.
 
-### UAT-063 — Prices survive a rescan/re-search
+### UAT-068 — Prices survive a rescan/re-search
 - **Goal:** Price cache path doesn't duplicate or misattribute prices.
 - **Commands:** `search "bread"` → `wait 10000` → `search "bread"` → `wait 10000` → `getState`
 - **Expect:** Prices still correctly attached to the same rows; no doubled price lines.

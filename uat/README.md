@@ -63,7 +63,7 @@ push, and watch results arrive.
 
 ## Test plan
 
-`uat/UAT_PLAN.md` — 64 cases, each with a clear goal, exact driver commands,
+`uat/UAT_PLAN.md` — 72 cases, each with a clear goal, exact driver commands,
 and observable pass criteria. Start there, not with ad-hoc feeds.
 
 ## Updating the feed
