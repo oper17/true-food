@@ -29,6 +29,9 @@ import java.util.List;
  *               kept only as a safety net; default config always yields one).
  */
 public final class AffiliateNavigator {
+
+    private static final int C_GRAY_900 = android.graphics.Color.parseColor("#111827");
+    private static final int C_GRAY_500 = android.graphics.Color.parseColor("#6B7280");
     private AffiliateNavigator() {
     }
 
@@ -122,14 +125,14 @@ public final class AffiliateNavigator {
         title.setText("Choose a retailer");
         title.setTextSize(18f);
         title.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        title.setTextColor(android.graphics.Color.parseColor("#111827"));
+        title.setTextColor(C_GRAY_900);
         layout.addView(title);
 
         // FTC disclosure, adjacent to the retailer links.
         android.widget.TextView disclosure = new android.widget.TextView(activity);
         disclosure.setText(AffiliateConfig.DISCLOSURE_TEXT);
         disclosure.setTextSize(13f);
-        disclosure.setTextColor(android.graphics.Color.parseColor("#6B7280"));
+        disclosure.setTextColor(C_GRAY_500);
         android.widget.LinearLayout.LayoutParams disclosureParams =
                 new android.widget.LinearLayout.LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,

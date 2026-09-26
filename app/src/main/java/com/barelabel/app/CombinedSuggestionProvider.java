@@ -16,7 +16,6 @@ public class CombinedSuggestionProvider implements SuggestionProvider {
 
     private final UnbrandedSuggestionProvider unbrandedProvider;
     private final SuggestionProvider usdaProvider;
-    private final java.util.Set<String> lastUnbranded = new java.util.HashSet<>();
 
     public CombinedSuggestionProvider(UnbrandedSuggestionProvider unbrandedProvider,
                                       SuggestionProvider usdaProvider) {
@@ -27,12 +26,10 @@ public class CombinedSuggestionProvider implements SuggestionProvider {
     @Override
     public List<Suggestion> fetchSuggestions(String query) throws Exception {
         List<Suggestion> merged = new ArrayList<>();
-        lastUnbranded.clear();
 
         for (String s : unbrandedProvider.getCompletions(query, MAX_UNBRANDED)) {
             if (!containsLabel(merged, s)) {
                 merged.add(new Suggestion(s, 0));
-                lastUnbranded.add(s);
             }
         }
 
@@ -57,6 +54,7 @@ public class CombinedSuggestionProvider implements SuggestionProvider {
 
     @Override
     public boolean isUnbrandedSuggestion(String suggestion) {
-        return suggestion != null && lastUnbranded.contains(suggestion);
+        // Stateless dictionary check — no cross-thread "last results" cache.
+        return unbrandedProvider.isKnownTerm(suggestion);
     }
 }

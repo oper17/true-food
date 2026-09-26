@@ -9,9 +9,11 @@ import org.json.JSONObject;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Scanner;
+import java.util.Set;
 
 /**
  * Offline unbranded food completions backed by a prefix map generated from
@@ -33,6 +35,7 @@ public class UnbrandedSuggestionProvider {
     private boolean loaded = false;
     private JSONArray terms;
     private JSONObject prefixMap;
+    private Set<String> termSet = null;
 
     public UnbrandedSuggestionProvider(Context context) {
         this.appContext = context.getApplicationContext();
@@ -78,5 +81,24 @@ public class UnbrandedSuggestionProvider {
         } catch (Exception e) {
             Log.e(TAG, "Failed to load unbranded prefix map", e);
         }
+    }
+
+    /**
+     * True when the label is one of the offline unbranded dictionary terms.
+     * Stateless — safe to call from any thread, unlike a "last results"
+     * cache written on a worker and read on the UI thread.
+     */
+    public synchronized boolean isKnownTerm(String term) {
+        ensureLoaded();
+        if (termSet == null) {
+            termSet = new HashSet<>();
+            if (terms != null) {
+                for (int i = 0; i < terms.length(); i++) {
+                    String t = terms.optString(i, "");
+                    if (!t.isEmpty()) termSet.add(t);
+                }
+            }
+        }
+        return term != null && termSet.contains(term);
     }
 }

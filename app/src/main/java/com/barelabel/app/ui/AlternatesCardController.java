@@ -60,6 +60,21 @@ public class AlternatesCardController {
         void onBuy(ProductResult product);
     }
 
+    // Palette, parsed once: Color.parseColor is surprisingly expensive
+    // (string parsing per call) and these run per row during bind.
+    private static final int C_GREEN_700 = Color.parseColor("#15803D");
+    private static final int C_GREEN_800 = Color.parseColor("#166534");
+    private static final int C_BLUE_600 = Color.parseColor("#2563EB");
+    private static final int C_ORANGE_700 = Color.parseColor("#C2410C");
+    private static final int C_EMERALD_700 = Color.parseColor("#047857");
+    private static final int C_GRAY_100 = Color.parseColor("#F3F4F6");
+    private static final int C_GRAY_200 = Color.parseColor("#E5E7EB");
+    private static final int C_GRAY_400 = Color.parseColor("#9CA3AF");
+    private static final int C_GRAY_500 = Color.parseColor("#6B7280");
+    private static final int C_GRAY_700 = Color.parseColor("#374151");
+    private static final int C_GRAY_900 = Color.parseColor("#111827");
+    private static final int C_WHITE = Color.parseColor("#FFFFFF");
+
     private final AppCompatActivity activity;
     private final View card;
     private final TextView title;
@@ -281,13 +296,13 @@ public class AlternatesCardController {
     /** Compare toggle visuals: green filled when selected, outlined when not. */
     private void styleCompareButton(android.widget.Button b, boolean selected) {
         if (selected) {
-            b.setBackground(pillBackground(Color.parseColor("#15803D"), 0));
-            b.setTextColor(Color.parseColor("#FFFFFF"));
+            b.setBackground(pillBackground(C_GREEN_700, 0));
+            b.setTextColor(C_WHITE);
             b.setText("\u2713 Compare");
         } else {
-            b.setBackground(pillBackground(Color.parseColor("#FFFFFF"),
-                    Color.parseColor("#9CA3AF")));
-            b.setTextColor(Color.parseColor("#374151"));
+            b.setBackground(pillBackground(C_WHITE,
+                    C_GRAY_400));
+            b.setTextColor(C_GRAY_700);
             b.setText("Compare");
         }
     }
@@ -548,8 +563,8 @@ public class AlternatesCardController {
             final int count = e.getValue();
             Button b = makeActionButton(ctx,
                     "Uncheck " + category + " (" + count + ")",
-                    Color.parseColor("#FFFFFF"), Color.parseColor("#2563EB"),
-                    Color.parseColor("#2563EB"));
+                    C_WHITE, C_BLUE_600,
+                    C_BLUE_600);
             LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -615,12 +630,18 @@ public class AlternatesCardController {
                             ? (TextView) ((ViewGroup) rowView).findViewWithTag(tag)
                             : null;
                     if (priceView == null) continue;
+                    // WeakReference: a slow price fetch must not retain the
+                    // whole row hierarchy if the panel was torn down meanwhile.
+                    final java.lang.ref.WeakReference<TextView> priceRef =
+                            new java.lang.ref.WeakReference<>(priceView);
                     PriceFetcher.fetch(gtin, result -> {
+                        TextView pv = priceRef.get();
+                        if (pv == null) return;
                         // Row may have been rebound for a different product since.
-                        if (!TextUtils.equals(String.valueOf(priceView.getTag()), tag)) return;
+                        if (!TextUtils.equals(String.valueOf(pv.getTag()), tag)) return;
                         if (result == null) return;
-                        priceView.setText(result.displayText());
-                        priceView.setVisibility(View.VISIBLE);
+                        pv.setText(result.displayText());
+                        pv.setVisibility(View.VISIBLE);
                     });
                 }
             }
@@ -631,7 +652,7 @@ public class AlternatesCardController {
         View divider = new View(activity);
         divider.setLayoutParams(new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(1)));
-        divider.setBackgroundColor(Color.parseColor("#E5E7EB"));
+        divider.setBackgroundColor(C_GRAY_200);
         return divider;
     }
 
@@ -674,7 +695,7 @@ public class AlternatesCardController {
                 + StringNormalizer.toTitleCase(cleanProductName(alt.name)));
         titleView.setTextSize(15f);
         titleView.setTypeface(titleView.getTypeface(), Typeface.BOLD);
-        titleView.setTextColor(Color.parseColor("#111827"));
+        titleView.setTextColor(C_GRAY_900);
         headerRow.addView(titleView);
 
         // Product thumbnail: conditional slot, only visible when OFF has an image.
@@ -694,7 +715,7 @@ public class AlternatesCardController {
         TextView chevron = new TextView(ctx);
         chevron.setText("›");
         chevron.setTextSize(20f);
-        chevron.setTextColor(Color.parseColor("#9CA3AF"));
+        chevron.setTextColor(C_GRAY_400);
         chevron.setPadding(dp(8), 0, 0, 0);
         headerRow.addView(chevron);
         row.addView(headerRow);
@@ -707,13 +728,13 @@ public class AlternatesCardController {
             brandView.setText(StringNormalizer.toTitleCase(alt.brand));
             brandView.setTextSize(12f);
             brandView.setTypeface(brandView.getTypeface(), Typeface.BOLD);
-            brandView.setTextColor(Color.parseColor("#FFFFFF"));
+            brandView.setTextColor(C_WHITE);
             brandView.setPadding(dp(10), dp(4), dp(10), dp(4));
             android.graphics.drawable.GradientDrawable brandBg =
                     new android.graphics.drawable.GradientDrawable();
             brandBg.setShape(android.graphics.drawable.GradientDrawable.RECTANGLE);
             brandBg.setCornerRadius(dp(12));
-            brandBg.setColor(Color.parseColor("#C2410C"));
+            brandBg.setColor(C_ORANGE_700);
             brandView.setBackground(brandBg);
             LinearLayout.LayoutParams brandParams = new LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -736,7 +757,7 @@ public class AlternatesCardController {
         }
         metaView.setText(meta.toString());
         metaView.setTextSize(13f);
-        metaView.setTextColor(Color.parseColor("#374151"));
+        metaView.setTextColor(C_GRAY_700);
         metaView.setPadding(0, dp(4), 0, 0);
         row.addView(metaView);
 
@@ -747,7 +768,7 @@ public class AlternatesCardController {
         priceView.setTag("price:" + (alt.gtinUpc == null ? "" : alt.gtinUpc));
         priceView.setTextSize(13f);
         priceView.setTypeface(priceView.getTypeface(), Typeface.BOLD);
-        priceView.setTextColor(Color.parseColor("#047857"));
+        priceView.setTextColor(C_EMERALD_700);
         priceView.setPadding(0, dp(2), 0, 0);
         priceView.setVisibility(View.GONE);
         row.addView(priceView);
@@ -766,7 +787,7 @@ public class AlternatesCardController {
         disclosureView.setText(
                 com.barelabel.app.affiliate.AffiliateConfig.DISCLOSURE_TEXT);
         disclosureView.setTextSize(10f);
-        disclosureView.setTextColor(Color.parseColor("#6B7280"));
+        disclosureView.setTextColor(C_GRAY_500);
         disclosureView.setPadding(0, dp(4), 0, 0);
         disclosureView.setVisibility(View.GONE);
         final com.barelabel.app.model.ProductResult finalAlt = alt;
@@ -803,7 +824,7 @@ public class AlternatesCardController {
         actionRow.setPadding(0, dp(10), 0, 0);
 
         android.widget.Button buyButton = makeActionButton(ctx, "Buy",
-                Color.parseColor("#2563EB"), Color.parseColor("#FFFFFF"), 0);
+                C_BLUE_600, C_WHITE, 0);
         buyButton.setOnClickListener(v -> {
             AnalyticsTracker.buyTapped("alternate");
             buyListener.onBuy(alt);
@@ -812,15 +833,15 @@ public class AlternatesCardController {
 
         if (saveListener != null) {
             android.widget.Button saveButton = makeActionButton(ctx, "Save",
-                    Color.parseColor("#FFFFFF"), Color.parseColor("#2563EB"),
-                    Color.parseColor("#2563EB"));
+                    C_WHITE, C_BLUE_600,
+                    C_BLUE_600);
             saveButton.setOnClickListener(v -> {
                 if (saveListener.onSaveProduct(alt)) {
                     saveButton.setText("Saved \u2713");
                     saveButton.setEnabled(false);
                     saveButton.setBackground(
-                            pillBackground(Color.parseColor("#F3F4F6"), 0));
-                    saveButton.setTextColor(Color.parseColor("#9CA3AF"));
+                            pillBackground(C_GRAY_100, 0));
+                    saveButton.setTextColor(C_GRAY_400);
                 }
             });
             actionRow.addView(saveButton);
@@ -828,8 +849,8 @@ public class AlternatesCardController {
 
         if (comparePickListener != null) {
             android.widget.Button compareButton = makeActionButton(ctx, "Compare",
-                    Color.parseColor("#FFFFFF"), Color.parseColor("#374151"),
-                    Color.parseColor("#9CA3AF"));
+                    C_WHITE, C_GRAY_700,
+                    C_GRAY_400);
             compareButton.setTag(alt);
             compareButton.setOnClickListener(v -> {
                 if (syncingCompareBoxes) return;
@@ -865,7 +886,7 @@ public class AlternatesCardController {
                 TextUtils.isEmpty(alt.ingredients) ? "No ingredient list available."
                         : alt.ingredients));
         ingredientsView.setTextSize(13f);
-        ingredientsView.setTextColor(Color.parseColor("#374151"));
+        ingredientsView.setTextColor(C_GRAY_700);
         ingredientsView.setLineSpacing(dp(2), 1f);
         expandBox.addView(ingredientsView);
 
@@ -930,7 +951,7 @@ public class AlternatesCardController {
             int end = out.length();
             if (FlaggedIngredientManager.isSuperiorIngredient(activity, trimmed)) {
                 out.setSpan(new android.text.style.ForegroundColorSpan(
-                                Color.parseColor("#15803D")),
+                                C_GREEN_700),
                         start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 out.setSpan(new android.text.style.StyleSpan(Typeface.BOLD),
                         start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
@@ -946,8 +967,7 @@ public class AlternatesCardController {
         updatingSwitch = false;
         if (organicStateText != null) {
             organicStateText.setText(preferOrganic ? "ON" : "OFF");
-            organicStateText.setTextColor(Color.parseColor(
-                    preferOrganic ? "#166534" : "#6B7280"));
+            organicStateText.setTextColor(preferOrganic ? C_GREEN_800 : C_GRAY_500);
         }
     }
 

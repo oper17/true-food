@@ -60,11 +60,15 @@ public final class UsdaSpamFilter {
 
     /** True when the description contains the query as a whole word. */
     public static boolean isWholeWordMatch(String description, String query) {
-        String nq = normalize(query);
-        if (nq.isEmpty()) {
+        return isWholeWordMatchNormalized(description, normalize(query));
+    }
+
+    /** Whole-word match against an already-normalized query (normalize once per result set). */
+    private static boolean isWholeWordMatchNormalized(String description, String normalizedQuery) {
+        if (normalizedQuery.isEmpty()) {
             return false;
         }
-        return (" " + normalize(description) + " ").contains(" " + nq + " ");
+        return (" " + normalize(description) + " ").contains(" " + normalizedQuery + " ");
     }
 
     /**
@@ -73,6 +77,7 @@ public final class UsdaSpamFilter {
      * spam tail via {@link #isSpamBrand(String)}.
      */
     public static List<JSONObject> rankedCandidates(JSONArray foods, String query) {
+        String normalizedQuery = normalize(query);
         List<JSONObject> whole = new ArrayList<JSONObject>();
         List<JSONObject> rest = new ArrayList<JSONObject>();
         List<JSONObject> spam = new ArrayList<JSONObject>();
@@ -84,7 +89,7 @@ public final class UsdaSpamFilter {
                 }
                 if (isSpamBrand(f.optString("brandOwner", ""))) {
                     spam.add(f);
-                } else if (isWholeWordMatch(f.optString("description", ""), query)) {
+                } else if (isWholeWordMatchNormalized(f.optString("description", ""), normalizedQuery)) {
                     whole.add(f);
                 } else {
                     rest.add(f);

@@ -53,10 +53,19 @@ public final class PriceFetcher {
     private static final Set<String> MISS = ConcurrentHashMap.newKeySet();
     private static final Map<String, List<PriceCallback>> IN_FLIGHT =
             new ConcurrentHashMap<>();
+    /** Backoff after a 429: no new trial requests until this wall-clock time. */
+    private static volatile long rateLimitedUntilMs = 0;
+    private static final long RATE_LIMIT_COOLDOWN_MS = 60_000;
 
     /** Callback; always invoked on the main thread. {@code result} is null when unknown. */
     public interface PriceCallback {
         void onPrice(PriceResult result);
+    }
+
+    /** Transport/HTTP failure: never cached as a miss, always retried later. */
+    private static final class PriceTransportException extends Exception {
+        PriceTransportException(String msg) { super(msg); }
+        PriceTransportException(String msg, Throwable cause) { super(msg, cause); }
     }
 
     public static final class PriceResult {
@@ -72,8 +81,16 @@ public final class PriceFetcher {
 
         /** e.g. "$11.38 · Walmart" or "$11.38" when no merchant is known. */
         public String displayText() {
-            String p = "$" + String.format(Locale.US, "%.2f", price);
+            String p = currencySymbol() + String.format(Locale.US, "%.2f", price);
             return merchant.isEmpty() ? p : p + " · " + merchant;
+        }
+
+        private String currencySymbol() {
+            try {
+                return java.util.Currency.getInstance(currency).getSymbol(Locale.US);
+            } catch (Exception e) {
+                return "USD".equals(currency) ? "$" : currency + " ";
+            }
         }
     }
 
@@ -93,33 +110,63 @@ public final class PriceFetcher {
             MAIN.post(() -> callback.onPrice(hit));
             return;
         }
-        List<PriceCallback> waiters = IN_FLIGHT.get(gtin);
-        if (waiters != null) {
-            waiters.add(callback);
+        if (rateLimitedUntilMs > System.currentTimeMillis()) {
+            // Trial quota exhausted: don't burn requests, report unknown.
+            MAIN.post(() -> callback.onPrice(null));
             return;
         }
-        List<PriceCallback> fresh = new ArrayList<>();
-        fresh.add(callback);
-        IN_FLIGHT.put(gtin, fresh);
-        EXEC.execute(() -> {
-            PriceResult result = USE_WORKER ? lookupViaWorker(gtin) : lookupViaUpcitemdb(gtin);
-            if (result != null) {
-                CACHE.put(gtin, result);
+        // In-flight coalescing, race-free: the map lock makes exactly one
+        // thread the leader; joiners can only attach before the leader's
+        // remove, so no callback is ever stranded.
+        final boolean leader;
+        synchronized (IN_FLIGHT) {
+            List<PriceCallback> existing = IN_FLIGHT.get(gtin);
+            if (existing == null) {
+                existing = new ArrayList<>();
+                IN_FLIGHT.put(gtin, existing);
+                leader = true;
             } else {
-                MISS.add(gtin);
+                leader = false;
             }
-            List<PriceCallback> done = IN_FLIGHT.remove(gtin);
+            existing.add(callback);
+        }
+        if (!leader) return;
+        EXEC.execute(() -> {
+            PriceResult result = null;
+            try {
+                result = USE_WORKER ? lookupViaWorker(gtin) : lookupViaUpcitemdb(gtin);
+                if (result != null) {
+                    CACHE.put(gtin, result);
+                } else {
+                    // Confirmed "no usable offer" — safe to remember.
+                    MISS.add(gtin);
+                }
+            } catch (PriceTransportException e) {
+                // Timeout / 429 / 5xx / bad response: NOT a miss. The next
+                // bind retries instead of showing nothing forever.
+                Log.w(TAG, "price lookup failed for " + gtin + "; not caching", e);
+            }
+            final List<PriceCallback> done;
+            synchronized (IN_FLIGHT) {
+                done = IN_FLIGHT.remove(gtin);
+            }
+            final PriceResult finalResult = result;
             MAIN.post(() -> {
                 if (done != null) {
                     for (PriceCallback cb : done) {
-                        cb.onPrice(result);
+                        cb.onPrice(finalResult);
                     }
                 }
             });
         });
     }
 
-    private static PriceResult lookupViaUpcitemdb(String gtin) {
+    /**
+     * @return cheapest in-stock offer, or null when UPCitemdb confirms it
+     *         has no usable offer for this GTIN (a real miss).
+     * @throws PriceTransportException on HTTP/transport failure (not a miss).
+     */
+    private static PriceResult lookupViaUpcitemdb(String gtin) throws PriceTransportException {
         HttpURLConnection conn = null;
         try {
             URL url = new URL(UPCITEMDB_TRIAL_URL + "?upc=" + gtin);
@@ -127,7 +174,14 @@ public final class PriceFetcher {
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
             conn.setRequestMethod("GET");
-            if (conn.getResponseCode() != 200) return null;
+            int code = conn.getResponseCode();
+            if (code == 429) {
+                rateLimitedUntilMs = System.currentTimeMillis() + RATE_LIMIT_COOLDOWN_MS;
+                throw new PriceTransportException("UPCitemdb 429: trial quota exhausted");
+            }
+            if (code != 200) {
+                throw new PriceTransportException("UPCitemdb HTTP " + code);
+            }
             BufferedReader in = new BufferedReader(
                     new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
@@ -153,15 +207,16 @@ public final class PriceFetcher {
                 }
             }
             return best;
+        } catch (PriceTransportException e) {
+            throw e;
         } catch (Exception e) {
-            Log.w(TAG, "UPCitemdb lookup failed for " + gtin, e);
-            return null;
+            throw new PriceTransportException("UPCitemdb lookup failed for " + gtin, e);
         } finally {
             if (conn != null) conn.disconnect();
         }
     }
 
-    private static PriceResult lookupViaWorker(String gtin) {
+    private static PriceResult lookupViaWorker(String gtin) throws PriceTransportException {
         HttpURLConnection conn = null;
         try {
             URL url = new URL(WORKER_URL + "?gtin=" + gtin);
@@ -169,7 +224,9 @@ public final class PriceFetcher {
             conn.setConnectTimeout(10000);
             conn.setReadTimeout(10000);
             conn.setRequestMethod("GET");
-            if (conn.getResponseCode() != 200) return null;
+            if (conn.getResponseCode() != 200) {
+                throw new PriceTransportException("worker HTTP " + conn.getResponseCode());
+            }
             BufferedReader in = new BufferedReader(
                     new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8));
             StringBuilder sb = new StringBuilder();
@@ -180,9 +237,10 @@ public final class PriceFetcher {
             if (!root.optBoolean("ok", false) || root.isNull("price")) return null;
             return new PriceResult(root.optDouble("price", Double.NaN),
                     root.optString("merchant", ""), root.optString("currency", "USD"));
+        } catch (PriceTransportException e) {
+            throw e;
         } catch (Exception e) {
-            Log.w(TAG, "Worker price lookup failed for " + gtin, e);
-            return null;
+            throw new PriceTransportException("Worker price lookup failed for " + gtin, e);
         } finally {
             if (conn != null) conn.disconnect();
         }
@@ -190,12 +248,13 @@ public final class PriceFetcher {
 
     /**
      * Normalizes a raw GTIN/UPC: digits only, left-padded to 12, GS1 check
-     * digit validated and repaired. Returns "" when unusable.
+     * digit validated and repaired. Returns "" when unusable. GTIN-8 is
+     * accepted (zero-extended); UPCitemdb coverage for those is uneven.
      */
     static String normalizeGtin(String raw) {
         if (raw == null) return "";
         String d = raw.replaceAll("\\D", "");
-        if (d.length() < 11) return "";
+        if (d.length() < 8) return "";
         while (d.length() < 12) d = "0" + d;
         if (d.length() > 14) d = d.substring(d.length() - 14);
         String payload = d.substring(0, d.length() - 1);

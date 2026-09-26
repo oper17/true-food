@@ -34,10 +34,110 @@ public class UsdaApiClient {
     private static final String USER_AGENT =
             "BareLabel/1.0 (Android food ingredient screening app)";
 
+    /** Retry policy for idempotent USDA calls: 3 attempts, exponential backoff. */
+    private static final int MAX_ATTEMPTS = 3;
+    private static final long RETRY_BASE_MS = 500;
+    private static final long RETRY_MAX_MS = 8000;
+    private static final java.util.regex.Pattern WS_UNDERSCORE =
+            java.util.regex.Pattern.compile("\\s+");
+
     private final Context appContext;
 
     public UsdaApiClient(Context context) {
         this.appContext = context.getApplicationContext();
+    }
+
+    /** Builds a configured connection; the request body (if any) is written inside open(). */
+    private interface ConnectionFactory {
+        HttpURLConnection open() throws IOException;
+    }
+
+    /**
+     * Executes an idempotent USDA request with exponential backoff on
+     * transient failures: 429 (honoring Retry-After), 5xx, and transport
+     * errors. Other 4xx fail fast. 2xx returns the body; persistent
+     * failures throw with the server's error body attached.
+     */
+    private String executeWithRetry(ConnectionFactory factory) throws IOException {
+        long backoffMs = RETRY_BASE_MS;
+        IOException failure = null;
+        boolean permanent = false;
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS && !permanent; attempt++) {
+            HttpURLConnection c = null;
+            try {
+                c = factory.open();
+                int code = c.getResponseCode();
+                String body = readResponseBody(c, code);
+                if (code >= 200 && code < 300) {
+                    return body;
+                }
+                failure = new IOException("HTTP " + code + bodySnippet(body));
+                if (code == 429 || code >= 500) {
+                    if (attempt < MAX_ATTEMPTS) {
+                        backoffMs = sleepBeforeRetry(c, backoffMs);
+                    }
+                } else {
+                    permanent = true;
+                }
+            } catch (IOException e) {
+                // Abort immediately when the thread was interrupted.
+                if (Thread.currentThread().isInterrupted()) throw e;
+                failure = e;
+                if (attempt < MAX_ATTEMPTS) {
+                    backoffMs = sleepBeforeRetry(c, backoffMs);
+                }
+            } finally {
+                if (c != null) c.disconnect();
+            }
+        }
+        throw failure != null ? failure : new IOException("USDA request failed");
+    }
+
+    /** Sleeps before the next attempt; 429 honors the server's Retry-After. */
+    private long sleepBeforeRetry(HttpURLConnection c, long backoffMs) throws IOException {
+        long waitMs = backoffMs;
+        if (c != null) {
+            String retryAfter = c.getHeaderField("Retry-After");
+            if (retryAfter != null) {
+                try {
+                    waitMs = Math.max(waitMs, Long.parseLong(retryAfter.trim()) * 1000L);
+                } catch (NumberFormatException ignored) {}
+            }
+        }
+        try {
+            Thread.sleep(waitMs);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            throw new java.io.InterruptedIOException("retry backoff interrupted");
+        }
+        return Math.min(backoffMs * 2, RETRY_MAX_MS);
+    }
+
+    private String getWithRetry(final String urlString, final int connectTimeout,
+                                final int readTimeout) throws IOException {
+        return executeWithRetry(() -> {
+            HttpURLConnection c = (HttpURLConnection) new URL(urlString).openConnection();
+            c.setConnectTimeout(connectTimeout);
+            c.setReadTimeout(readTimeout);
+            c.setRequestMethod("GET");
+            c.setRequestProperty("User-Agent", USER_AGENT);
+            return c;
+        });
+    }
+
+    private static String readResponseBody(HttpURLConnection c, int code) throws IOException {
+        InputStream raw = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream();
+        if (raw == null) return "";
+        try (InputStream is = raw) {
+            return readAll(is);
+        }
+    }
+
+    /** First ~200 chars of an error body, flattened — for exception messages. */
+    private static String bodySnippet(String body) {
+        if (body == null || body.isEmpty()) return "";
+        String flat = body.replaceAll("\\s+", " ").trim();
+        return ": " + flat.substring(0, Math.min(200, flat.length()));
     }
 
     /**
@@ -52,38 +152,21 @@ public class UsdaApiClient {
         // 1. Check local disk cache (7-day TTL)
         String body = UsdaResponseCache.get(appContext, cacheKey);
 
-        // 2. Fetch from network if cache missed or expired
+        // 2. Fetch from network if cache missed or expired (with retry)
         if (body == null) {
             String q = URLEncoder.encode(productName, "UTF-8");
 
-            String url = BASE_URL
+            final String urlString = BASE_URL
                     + "?api_key=" + BuildConfig.USDA_API_KEY
                     + "&query=" + q
                     + "&dataType=Branded"
                     + "&pageSize=25";
 
-            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-            try {
-                c.setConnectTimeout(10000);
-                c.setReadTimeout(15000);
-                c.setRequestMethod("GET");
-                c.setRequestProperty("User-Agent", USER_AGENT);
+            body = getWithRetry(urlString, 10000, 15000);
 
-                int code = c.getResponseCode();
-                try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
-                    body = readAll(is);
-                }
-
-                if (code < 200 || code >= 300) {
-                    throw new IOException("HTTP " + code);
-                }
-
-                // Save valid network response to cache
-                if (!TextUtils.isEmpty(body)) {
-                    UsdaResponseCache.put(appContext, cacheKey, body);
-                }
-            } finally {
-                c.disconnect();
+            // Save valid network response to cache
+            if (!TextUtils.isEmpty(body)) {
+                UsdaResponseCache.put(appContext, cacheKey, body);
             }
         }
 
@@ -136,33 +219,16 @@ public class UsdaApiClient {
         // 1. Check local disk cache (7-day TTL)
         String body = UsdaResponseCache.get(appContext, cacheKey);
 
-        // 2. Fetch from network if cache missed or expired
+        // 2. Fetch from network if cache missed or expired (with retry)
         if (body == null) {
-            String url = "https://api.nal.usda.gov/fdc/v1/food/" + fdcId
+            final String urlString = "https://api.nal.usda.gov/fdc/v1/food/" + fdcId
                     + "?api_key=" + BuildConfig.USDA_API_KEY;
 
-            HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-            try {
-                c.setConnectTimeout(10000);
-                c.setReadTimeout(15000);
-                c.setRequestMethod("GET");
-                c.setRequestProperty("User-Agent", USER_AGENT);
+            body = getWithRetry(urlString, 10000, 15000);
 
-                int code = c.getResponseCode();
-                try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
-                    body = readAll(is);
-                }
-
-                if (code < 200 || code >= 300) {
-                    throw new IOException("HTTP " + code);
-                }
-
-                // Save valid network response to cache
-                if (!TextUtils.isEmpty(body)) {
-                    UsdaResponseCache.put(appContext, cacheKey, body);
-                }
-            } finally {
-                c.disconnect();
+            // Save valid network response to cache
+            if (!TextUtils.isEmpty(body)) {
+                UsdaResponseCache.put(appContext, cacheKey, body);
             }
         }
 
@@ -202,53 +268,48 @@ public class UsdaApiClient {
      */
     public JSONArray fetchFoodsPage(String query, String foodCategory, boolean filterByCategory,
                                     int pageNumber, int pageSize) throws Exception {
-        String cacheKey = "usda_alternates_" + (filterByCategory ? "cat_" : "")
-                + query.toLowerCase().trim().replaceAll("\\s+", "_") + "_p" + pageNumber;
+        // The category is part of the key: without it, a cached unfiltered
+        // page could be served for a filtered request (or vice versa).
+        String cacheKey = "usda_alternates_"
+                + (filterByCategory ? "cat_" + foodCategory + "_" : "")
+                + WS_UNDERSCORE.matcher(query.toLowerCase().trim()).replaceAll("_")
+                + "_p" + pageNumber;
 
         // 1. Check local disk cache (7-day TTL)
         String body = UsdaResponseCache.get(appContext, cacheKey);
 
-        // 2. Fetch from network if cache missed or expired
+        // 2. Fetch from network if cache missed or expired (with retry).
+        // Persistent failures throw; callers treat that as end-of-pages.
         if (body == null) {
-            HttpURLConnection c = (HttpURLConnection) new URL(
-                    BASE_URL + "?api_key=" + BuildConfig.USDA_API_KEY).openConnection();
-            try {
+            final JSONObject payload = new JSONObject();
+            payload.put("query", query);
+            payload.put("dataType", new JSONArray().put("Branded"));
+            payload.put("pageSize", pageSize);
+            payload.put("pageNumber", pageNumber);
+            if (filterByCategory) {
+                // Narrow results using the USDA's own category vocabulary.
+                payload.put("foodCategory", foodCategory);
+            }
+            final byte[] payloadBytes = payload.toString().getBytes(StandardCharsets.UTF_8);
+
+            body = executeWithRetry(() -> {
+                HttpURLConnection c = (HttpURLConnection) new URL(
+                        BASE_URL + "?api_key=" + BuildConfig.USDA_API_KEY).openConnection();
                 c.setConnectTimeout(10000);
                 c.setReadTimeout(15000);
                 c.setRequestMethod("POST");
                 c.setRequestProperty("Content-Type", "application/json");
                 c.setRequestProperty("User-Agent", USER_AGENT);
                 c.setDoOutput(true);
-
-                JSONObject payload = new JSONObject();
-                payload.put("query", query);
-                payload.put("dataType", new JSONArray().put("Branded"));
-                payload.put("pageSize", pageSize);
-                payload.put("pageNumber", pageNumber);
-                if (filterByCategory) {
-                    // Narrow results using the USDA's own category vocabulary.
-                    payload.put("foodCategory", foodCategory);
-                }
-
                 try (OutputStream os = c.getOutputStream()) {
-                    os.write(payload.toString().getBytes(StandardCharsets.UTF_8));
+                    os.write(payloadBytes);
                 }
+                return c;
+            });
 
-                int code = c.getResponseCode();
-                try (InputStream is = code >= 200 && code < 300 ? c.getInputStream() : c.getErrorStream()) {
-                    body = readAll(is);
-                }
-
-                if (code < 200 || code >= 300) {
-                    return null;
-                }
-
-                // Save valid network response to cache
-                if (!TextUtils.isEmpty(body)) {
-                    UsdaResponseCache.put(appContext, cacheKey, body);
-                }
-            } finally {
-                c.disconnect();
+            // Save valid network response to cache
+            if (!TextUtils.isEmpty(body)) {
+                UsdaResponseCache.put(appContext, cacheKey, body);
             }
         }
 
@@ -267,44 +328,46 @@ public class UsdaApiClient {
      * match exists.
      */
     public JSONObject findFoodByGtin(String gtin) throws Exception {
-        String urlString = BASE_URL + "?query="
-                + URLEncoder.encode(gtin, "UTF-8")
-                + "&dataType=Branded"
-                + "&pageSize=10"
-                + "&api_key=" + BuildConfig.USDA_API_KEY;
+        // GTIN lookups are repeated across barcode scans; cache the raw
+        // response instead of hitting USDA twice per scan.
+        String cacheKey = "usda_gtin_" + gtin.replaceAll("\\D", "");
 
-        HttpURLConnection conn = (HttpURLConnection) new URL(urlString).openConnection();
-        try {
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(8000);
-            conn.setReadTimeout(10000);
-            conn.setRequestProperty("User-Agent", USER_AGENT);
+        String body = UsdaResponseCache.get(appContext, cacheKey);
+        if (body == null) {
+            final String urlString = BASE_URL + "?query="
+                    + URLEncoder.encode(gtin, "UTF-8")
+                    + "&dataType=Branded"
+                    + "&pageSize=10"
+                    + "&api_key=" + BuildConfig.USDA_API_KEY;
 
-            if (conn.getResponseCode() != 200) return null;
-
-            JSONObject responseJson = new JSONObject(readAll(conn.getInputStream()));
-            JSONArray foods = responseJson.optJSONArray("foods");
-            if (foods == null || foods.length() == 0) return null;
-
-            String needle = gtin.replaceFirst("^0+", "");
-            JSONObject fallback = null;
-            for (int i = 0; i < foods.length(); i++) {
-                JSONObject f = foods.getJSONObject(i);
-                String stored = f.optString("gtinUpc", "").replaceFirst("^0+", "");
-                if (!stored.isEmpty() && stored.equals(needle)) {
-                    return f; // exact GTIN match
-                }
-                if (fallback == null && !f.optString("ingredients", "").trim().isEmpty()) {
-                    fallback = f;
-                }
+            body = getWithRetry(urlString, 8000, 10000);
+            if (!TextUtils.isEmpty(body)) {
+                UsdaResponseCache.put(appContext, cacheKey, body);
             }
-            return fallback;
-        } finally {
-            conn.disconnect();
         }
+
+        if (TextUtils.isEmpty(body)) return null;
+
+        JSONObject responseJson = new JSONObject(body);
+        JSONArray foods = responseJson.optJSONArray("foods");
+        if (foods == null || foods.length() == 0) return null;
+
+        String needle = gtin.replaceFirst("^0+", "");
+        JSONObject fallback = null;
+        for (int i = 0; i < foods.length(); i++) {
+            JSONObject f = foods.getJSONObject(i);
+            String stored = f.optString("gtinUpc", "").replaceFirst("^0+", "");
+            if (!stored.isEmpty() && stored.equals(needle)) {
+                return f; // exact GTIN match
+            }
+            if (fallback == null && !f.optString("ingredients", "").trim().isEmpty()) {
+                fallback = f;
+            }
+        }
+        return fallback;
     }
 
-    private String readAll(InputStream is) throws IOException {
+    private static String readAll(InputStream is) throws IOException {
         BufferedReader r = new BufferedReader(new InputStreamReader(is, "UTF-8"));
         StringBuilder b = new StringBuilder();
         String line;

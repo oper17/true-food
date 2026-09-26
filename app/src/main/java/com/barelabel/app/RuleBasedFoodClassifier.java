@@ -9,7 +9,8 @@ import java.util.regex.Pattern;
 public class RuleBasedFoodClassifier {
 
     // Regex patterns for text cleaning
-    private static final Pattern PARENTHESES_PATTERN = Pattern.compile("\\(.*\\)");
+    // Non-greedy: "a (x) b (y)" strips "(x)" and "(y)", not "(x) b (y)".
+    private static final Pattern PARENTHESES_PATTERN = Pattern.compile("\\(.*?\\)");
     private static final Pattern CLEAN_PUNCTUATION = Pattern.compile("[^a-zA-Z0-9\\s,]");
 
     // Known brand list to strip out if appearing before commas

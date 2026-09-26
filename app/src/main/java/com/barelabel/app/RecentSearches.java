@@ -2,7 +2,6 @@ package com.barelabel.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.preference.PreferenceManager;
 
 import org.json.JSONArray;
 
@@ -12,6 +11,9 @@ import java.util.List;
 /**
  * Persists the user's recent searches (most-recent-first, deduplicated,
  * capped) so the autocomplete dropdown can offer them as quick-tap bubbles.
+ *
+ * All methods are synchronized: add() now runs on a worker thread while
+ * get() runs on the UI thread, and the read-modify-write must be atomic.
  */
 public class RecentSearches {
 
@@ -19,10 +21,11 @@ public class RecentSearches {
     private static final int MAX_RECENTS = 8;
 
     private static SharedPreferences prefs(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context);
+        // Same backing file android.preference.PreferenceManager used — no migration.
+        return FlaggedIngredientManager.defaultPrefs(context);
     }
 
-    public static List<String> get(Context context) {
+    public static synchronized List<String> get(Context context) {
         List<String> out = new ArrayList<>();
         String raw = prefs(context).getString(KEY, "[]");
         try {
@@ -36,7 +39,7 @@ public class RecentSearches {
         return out;
     }
 
-    public static void add(Context context, String query) {
+    public static synchronized void add(Context context, String query) {
         if (query == null) return;
         String q = query.trim();
         if (q.isEmpty()) return;

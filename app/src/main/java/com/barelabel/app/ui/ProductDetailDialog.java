@@ -23,6 +23,11 @@ import java.util.Collection;
  */
 public final class ProductDetailDialog {
 
+    private static final int C_GREEN_800 = android.graphics.Color.parseColor("#166534");
+    private static final int C_RED_800 = android.graphics.Color.parseColor("#991B1B");
+
+    private static final int C_GREEN_700 = android.graphics.Color.parseColor("#15803D");
+
     private ProductDetailDialog() {
     }
 
@@ -42,7 +47,7 @@ public final class ProductDetailDialog {
         }
         content.setSpan(new StyleSpan(Typeface.BOLD),
                 verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        content.setSpan(new ForegroundColorSpan(Color.parseColor(isClean ? "#166534" : "#991B1B")),
+        content.setSpan(new ForegroundColorSpan(isClean ? C_GREEN_800 : C_RED_800),
                 verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
 
         // Ingredients header
@@ -61,7 +66,7 @@ public final class ProductDetailDialog {
             content.append(trimmed);
             int tokenEnd = content.length();
             if (FlaggedIngredientManager.isSuperiorIngredient(context, trimmed)) {
-                content.setSpan(new ForegroundColorSpan(Color.parseColor("#15803D")),
+                content.setSpan(new ForegroundColorSpan(C_GREEN_700),
                         tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 content.setSpan(new StyleSpan(Typeface.BOLD),
                         tokenStart, tokenEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);

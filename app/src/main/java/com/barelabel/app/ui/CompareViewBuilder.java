@@ -39,6 +39,20 @@ import java.util.Set;
  */
 public final class CompareViewBuilder {
 
+    private static final int C_GREEN_800 = android.graphics.Color.parseColor("#166534");
+    private static final int C_GRAY_700 = android.graphics.Color.parseColor("#374151");
+    private static final int C_RED_800 = android.graphics.Color.parseColor("#991B1B");
+
+    private static final int C_GRAY_900 = android.graphics.Color.parseColor("#111827");
+    private static final int C_GREEN_700 = android.graphics.Color.parseColor("#15803D");
+    private static final int C_GREEN_600 = android.graphics.Color.parseColor("#16A34A");
+    private static final int C_GRAY_800 = android.graphics.Color.parseColor("#1F2937");
+    private static final int C_BLUE_600 = android.graphics.Color.parseColor("#2563EB");
+    private static final int C_GRAY_500 = android.graphics.Color.parseColor("#6B7280");
+    private static final int C_GRAY_400 = android.graphics.Color.parseColor("#9CA3AF");
+    private static final int C_RED_600 = android.graphics.Color.parseColor("#DC2626");
+    private static final int C_GRAY_200 = android.graphics.Color.parseColor("#E5E7EB");
+
     private CompareViewBuilder() {
     }
 
@@ -90,7 +104,7 @@ public final class CompareViewBuilder {
 
     private static View divider(Context context) {
         View divider = new View(context);
-        divider.setBackgroundColor(Color.parseColor("#E5E7EB"));
+        divider.setBackgroundColor(C_GRAY_200);
         return divider;
     }
 
@@ -115,7 +129,7 @@ public final class CompareViewBuilder {
         name.setText(p.displayName());
         name.setTextSize(15f);
         name.setTypeface(null, Typeface.BOLD);
-        name.setTextColor(Color.parseColor("#111827"));
+        name.setTextColor(C_GRAY_900);
         name.setGravity(Gravity.CENTER);
         name.setMaxLines(3);
         name.setEllipsize(TextUtils.TruncateAt.END);
@@ -126,7 +140,7 @@ public final class CompareViewBuilder {
         pill.setText(clean ? "\u2713 CLEAN" : "\u26A0 DIRTY");
         pill.setTextSize(12f);
         pill.setTypeface(null, Typeface.BOLD);
-        pill.setTextColor(Color.parseColor(clean ? "#166534" : "#991B1B"));
+        pill.setTextColor(clean ? C_GREEN_800 : C_RED_800);
         pill.setBackgroundResource(clean ? R.drawable.chip_clean_background
                 : R.drawable.chip_dirty_background);
         pill.setPadding(dp(context, 10), dp(context, 4), dp(context, 10), dp(context, 4));
@@ -139,7 +153,7 @@ public final class CompareViewBuilder {
         int n = p.flagged == null ? 0 : p.flagged.size();
         count.setText(n == 0 ? "No flagged ingredients" : n + " flagged");
         count.setTextSize(12f);
-        count.setTextColor(Color.parseColor("#6B7280"));
+        count.setTextColor(C_GRAY_500);
         count.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams countParams = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -157,7 +171,7 @@ public final class CompareViewBuilder {
                 disclosure.setText(
                         com.barelabel.app.affiliate.AffiliateConfig.DISCLOSURE_TEXT);
                 disclosure.setTextSize(10f);
-                disclosure.setTextColor(Color.parseColor("#6B7280"));
+                disclosure.setTextColor(C_GRAY_500);
                 disclosure.setGravity(Gravity.CENTER);
                 LinearLayout.LayoutParams disclosureParams = new LinearLayout.LayoutParams(
                         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -185,7 +199,7 @@ public final class CompareViewBuilder {
         buy.setText("Buy");
         buy.setTextSize(14f);
         buy.setTypeface(null, Typeface.BOLD);
-        buy.setTextColor(Color.parseColor("#2563EB"));
+        buy.setTextColor(C_BLUE_600);
         buy.setPadding(dp(context, 12), dp(context, 6), dp(context, 12), dp(context, 6));
         buy.setClickable(true);
         buy.setFocusable(true);
@@ -197,7 +211,7 @@ public final class CompareViewBuilder {
         save.setText(alreadySaved ? "Saved \u2713" : "Save");
         save.setTextSize(14f);
         save.setTypeface(null, Typeface.BOLD);
-        save.setTextColor(Color.parseColor(alreadySaved ? "#9CA3AF" : "#374151"));
+        save.setTextColor(alreadySaved ? C_GRAY_400 : C_GRAY_700);
         save.setPadding(dp(context, 12), dp(context, 6), dp(context, 12), dp(context, 6));
         save.setEnabled(!alreadySaved);
         save.setClickable(!alreadySaved);
@@ -206,7 +220,7 @@ public final class CompareViewBuilder {
             save.setOnClickListener(v -> {
                 if (listener.onSave(p)) {
                     save.setText("Saved \u2713");
-                    save.setTextColor(Color.parseColor("#9CA3AF"));
+                    save.setTextColor(C_GRAY_400);
                     save.setEnabled(false);
                 }
             });
@@ -235,7 +249,7 @@ public final class CompareViewBuilder {
         TextView name = new TextView(context);
         name.setText(ingredient);
         name.setTextSize(14f);
-        name.setTextColor(Color.parseColor("#1F2937"));
+        name.setTextColor(C_GRAY_800);
         LinearLayout.LayoutParams nameParams = new LinearLayout.LayoutParams(
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         nameParams.leftMargin = dp(context, 8);
@@ -252,20 +266,20 @@ public final class CompareViewBuilder {
         switch (status) {
             case ABSENT:
                 v.setText("\u2296"); // dash inside a circle
-                v.setTextColor(Color.parseColor("#9CA3AF"));
+                v.setTextColor(C_GRAY_400);
                 break;
             case FLAGGED:
                 v.setText("\u2715");
-                v.setTextColor(Color.parseColor("#DC2626"));
+                v.setTextColor(C_RED_600);
                 break;
             case SUPERIOR:
                 v.setText("\uD83C\uDF3F"); // leaf emoji
-                v.setTextColor(Color.parseColor("#15803D"));
+                v.setTextColor(C_GREEN_700);
                 break;
             case CLEAN:
             default:
                 v.setText("\u2713");
-                v.setTextColor(Color.parseColor("#16A34A"));
+                v.setTextColor(C_GREEN_600);
                 break;
         }
         v.setTextSize(status == Status.SUPERIOR ? 16f : 18f);
@@ -298,7 +312,7 @@ public final class CompareViewBuilder {
         appendLegendItem(sb, "\u2296 Not in product", "#9CA3AF");
         legend.setText(sb);
         legend.setTextSize(12f);
-        legend.setTextColor(Color.parseColor("#6B7280"));
+        legend.setTextColor(C_GRAY_500);
         legend.setGravity(Gravity.CENTER);
         legend.setPadding(0, dp(context, 4), 0, dp(context, 8));
         return legend;
