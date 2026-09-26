@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Debug-only manifest additions. This file is merged ONLY into debug builds
+    (app/src/debug). Release builds never see UatInitProvider, so the UAT
+    driver cannot exist in a shipped APK. Never move this into src/main.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <provider
+            android:name="com.barelabel.app.uat.UatInitProvider"
+            android:authorities="${applicationId}.uatinit"
+            android:exported="false"
+            android:initOrder="100" />
+    </application>
+</manifest>
