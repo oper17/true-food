@@ -73,6 +73,9 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
             fields.put("fdcId");
             fields.put("description");
             fields.put("brandOwner");
+            // brandName is the food-label brand (SIMPLY BALANCED); without
+            // it in fields the display falls back to the corporate owner.
+            fields.put("brandName");
             jsonPayload.put("fields", fields);
 
             try (OutputStream os = c.getOutputStream()) {

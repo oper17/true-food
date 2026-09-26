@@ -16,6 +16,8 @@ public class UsdaResponseCache {
 
     private static final String TAG = "UsdaResponseCache";
     private static final long TTL_MILLIS = TimeUnit.DAYS.toMillis(7); // 7 days TTL
+    /** Cap on cached responses; oldest (by last use) are evicted past this. */
+    private static final int MAX_CACHE_FILES = 200;
 
     public static String get(Context context, String urlOrQuery) {
         try {
@@ -40,6 +42,8 @@ public class UsdaResponseCache {
                     sb.append(line);
                 }
             }
+            // Touch for LRU: a hit counts as recent use for eviction order.
+            cacheFile.setLastModified(System.currentTimeMillis());
             return sb.toString();
         } catch (Exception e) {
             Log.e(TAG, "Failed to read cache", e);
@@ -53,8 +57,26 @@ public class UsdaResponseCache {
             try (FileOutputStream fos = new FileOutputStream(cacheFile)) {
                 fos.write(jsonResponse.getBytes(StandardCharsets.UTF_8));
             }
+            trimCache(cacheFile.getParentFile());
         } catch (Exception e) {
             Log.e(TAG, "Failed to write cache", e);
+        }
+    }
+
+    /** Evicts least-recently-used files past the cap. Runs on callers' worker threads. */
+    private static void trimCache(File cacheDir) {
+        try {
+            File[] files = cacheDir == null ? null : cacheDir.listFiles();
+            if (files == null || files.length <= MAX_CACHE_FILES) return;
+            java.util.Arrays.sort(files,
+                    (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+            for (int i = 0; i < files.length - MAX_CACHE_FILES; i++) {
+                if (!files[i].delete()) {
+                    Log.w(TAG, "Could not evict cache file " + files[i].getName());
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to trim cache", e);
         }
     }
 

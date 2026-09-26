@@ -2,6 +2,7 @@ package com.barelabel.app.search;
 
 import android.content.Context;
 import android.text.TextUtils;
+import android.util.Log;
 
 import com.barelabel.app.FlaggedIngredientManager;
 import com.barelabel.app.model.AlternateSearchResult;
@@ -12,6 +13,7 @@ import com.barelabel.app.util.StringNormalizer;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -31,6 +33,7 @@ import java.util.Set;
  */
 public class CleanAlternateFinder {
 
+    private static final String TAG = "CleanAlternateFinder";
     private static final int PAGE_SIZE = 50;
     private static final int MAX_POOL_SIZE = 60;
 
@@ -67,6 +70,13 @@ public class CleanAlternateFinder {
                 + "|" + StringNormalizer.normalize(primaryResult.brand);
         seenProductKeys.add(primaryKey);
 
+        // Resolve the user's flagged-category toggles once per search and
+        // reuse the pure (I/O-free) matcher per candidate — the old code
+        // re-read assets, recompiled ~200 regexes, and re-read prefs per
+        // candidate.
+        Set<String> enabledCategories =
+                FlaggedIngredientManager.getEnabledCategories(appContext);
+
         // For a category (unbranded) search, seed the pool with the user's actual
         // query first. The category pass below is broad ("cream cheese" classifies
         // to "Cheese"), so without this the pool would hold generic category items
@@ -74,16 +84,16 @@ public class CleanAlternateFinder {
         if (categoryIntent && userQuery != null && !userQuery.trim().isEmpty()
                 && !userQuery.trim().equalsIgnoreCase(foodCategory)) {
             collectCleanAlternates(result, seenProductKeys, foodCategory,
-                    false, userQuery.trim(), 2);
+                    false, userQuery.trim(), 2, enabledCategories);
         }
 
         collectCleanAlternates(result, seenProductKeys, foodCategory,
-                filterByCategory, foodCategory, 3);
+                filterByCategory, foodCategory, 3, enabledCategories);
 
         // Organic versions exist in the database but rarely crack relevance-sorted
         // results, so hunt for them explicitly.
         collectCleanAlternates(result, seenProductKeys, foodCategory,
-                filterByCategory, "organic " + foodCategory, 2);
+                filterByCategory, "organic " + foodCategory, 2, enabledCategories);
 
         return result;
     }
@@ -95,11 +105,21 @@ public class CleanAlternateFinder {
      */
     private void collectCleanAlternates(AlternateSearchResult result, Set<String> seenProductKeys,
                                         String foodCategory, boolean filterByCategory,
-                                        String query, int maxPages) throws Exception {
+                                        String query, int maxPages,
+                                        Set<String> enabledCategories) throws Exception {
         int pageNumber = 1;
         while (result.alternates.size() < MAX_POOL_SIZE && pageNumber <= maxPages) {
-            JSONArray foods = apiClient.fetchFoodsPage(query, foodCategory, filterByCategory,
-                    pageNumber, PAGE_SIZE);
+            JSONArray foods;
+            try {
+                foods = apiClient.fetchFoodsPage(query, foodCategory, filterByCategory,
+                        pageNumber, PAGE_SIZE);
+            } catch (IOException e) {
+                // Retries already exhausted: keep the partial pool instead of
+                // failing the whole search on one bad page.
+                Log.w(TAG, "alternates page " + pageNumber + " for '" + query
+                        + "' failed; using partial results", e);
+                break;
+            }
             if (foods == null || foods.length() == 0) {
                 break;
             }
@@ -132,7 +152,7 @@ public class CleanAlternateFinder {
                 seenProductKeys.add(productKey);
 
                 FlaggedIngredientManager.MatchResult matchResult =
-                        FlaggedIngredientManager.analyzeIngredients(appContext, ingredients);
+                        FlaggedIngredientManager.analyzeIngredients(ingredients, enabledCategories);
                 if (matchResult != null && matchResult.hasMatches()) {
                     // Remember which categories blocked this candidate so the UI can
                     // explain an empty result ("everything here contains gluten…").

@@ -2,12 +2,12 @@ package com.barelabel.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import android.preference.PreferenceManager;
 
 public class CategoryPreferenceManager {
 
     private static SharedPreferences getPrefs(Context context) {
-        return PreferenceManager.getDefaultSharedPreferences(context);
+        // Same backing file android.preference.PreferenceManager used — no migration.
+        return FlaggedIngredientManager.defaultPrefs(context);
     }
 
     public static boolean isCategoryEnabled(Context context, String category) {

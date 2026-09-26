@@ -53,6 +53,18 @@ public class FoodAutoCompleteManager {
     // Guard flag to suppress auto-complete triggers during programmatic edits/selections
     private boolean isSuppressingSuggestions = false;
 
+    /**
+     * Monotonic request generation. Bumped every time a new keystroke (or a
+     * selection/dismiss) supersedes the previous request, so a slow USDA
+     * response can never overwrite results for newer text. The executor is
+     * single-threaded, so in-flight fetches can't be interrupted — instead
+     * their results are dropped on arrival when stale.
+     */
+    private int suggestionGeneration = 0;
+
+    private static final int COLOR_MUTED_GRAY = Color.parseColor("#6B7280");
+    private static final int COLOR_DEEP_GREEN = Color.parseColor("#1B4332");
+
     public FoodAutoCompleteManager(Context context, SuggestionProvider suggestionProvider) {
         this.context = context;
         this.suggestionProvider = suggestionProvider;
@@ -143,10 +155,12 @@ public class FoodAutoCompleteManager {
                 }
 
                 // Debounced API call (300ms)
+                final int generation = suggestionGeneration;
+                final String requestQuery = query;
                 searchRunnable = () -> executor.execute(() -> {
                     try {
-                        List<Suggestion> suggestions = suggestionProvider.fetchSuggestions(query);
-                        handler.post(() -> renderSuggestions(suggestions, editText));
+                        List<Suggestion> suggestions = suggestionProvider.fetchSuggestions(requestQuery);
+                        handler.post(() -> renderSuggestions(suggestions, editText, requestQuery, generation));
                     } catch (Exception e) {
                         e.printStackTrace();
                     }
@@ -171,7 +185,16 @@ public class FoodAutoCompleteManager {
 
     private static final int MAX_SUGGESTIONS = 5;
 
-    private void renderSuggestions(List<Suggestion> suggestions, EditText editText) {
+    private void renderSuggestions(List<Suggestion> suggestions, EditText editText,
+                                   String requestQuery, int generation) {
+        // Stale request: a newer keystroke already superseded it — drop.
+        if (generation != suggestionGeneration) {
+            return;
+        }
+        // The box moved on while the network was in flight — drop.
+        if (!requestQuery.equals(editText.getText().toString().trim())) {
+            return;
+        }
         // Prevent popup rendering if view lost focus or selection was made
         if (isSuppressingSuggestions || !editText.hasFocus()) {
             popupWindow.dismiss();
@@ -224,7 +247,7 @@ public class FoodAutoCompleteManager {
         title.setText("your recent searches");
         title.setTextSize(12f);
         title.setTypeface(title.getTypeface(), android.graphics.Typeface.BOLD);
-        title.setTextColor(Color.parseColor("#6B7280"));
+        title.setTextColor(COLOR_MUTED_GRAY);
         title.setPadding(0, 0, 0, dp(8));
         panel.addView(title);
 
@@ -253,7 +276,7 @@ public class FoodAutoCompleteManager {
         TextView bubble = new TextView(context);
         bubble.setText(query);
         bubble.setTextSize(13f);
-        bubble.setTextColor(Color.parseColor("#1B4332"));
+        bubble.setTextColor(COLOR_DEEP_GREEN);
         bubble.setBackgroundResource(R.drawable.bg_bubble);
         bubble.setSingleLine(true);
         int hPad = dp(14);
@@ -292,6 +315,8 @@ public class FoodAutoCompleteManager {
     }
 
     private void cancelPendingSearch() {
+        // Invalidate any in-flight fetch; its result is dropped on arrival.
+        suggestionGeneration++;
         if (searchRunnable != null) {
             handler.removeCallbacks(searchRunnable);
             searchRunnable = null;

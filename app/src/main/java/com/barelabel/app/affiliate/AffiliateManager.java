@@ -26,6 +26,10 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Registry + resolver for affiliate links. Client-side only.
@@ -88,36 +92,71 @@ public final class AffiliateManager {
                 < AffiliateConfig.REMOTE_CHECK_INTERVAL_MS) {
             return;
         }
-        prefs.edit().putLong(KEY_LAST_CHECK, now).apply();
+        try {
+            // Fetch the JSON and its detached signature concurrently —
+            // one round trip instead of two sequential ones.
+            ExecutorService pool = Executors.newFixedThreadPool(2);
+            try {
+                Future<byte[]> jsonFuture = pool.submit(() -> fetchBytes(
+                        AffiliateConfig.REMOTE_MAPPINGS_URL + "?t=" + now / 1000));
+                Future<byte[]> sigFuture = pool.submit(() -> fetchBytes(
+                        AffiliateConfig.REMOTE_MAPPINGS_SIG_URL + "?t=" + now / 1000));
 
-        // Fail closed: the file is applied only if its detached RSA
-        // signature verifies. A missing/bad signature (e.g. repo compromise
-        // or MITM) keeps the current mappings instead of applying evil URLs.
-        byte[] jsonBytes = fetchBytes(
-                AffiliateConfig.REMOTE_MAPPINGS_URL + "?t=" + now / 1000);
-        if (jsonBytes == null) return;
-        byte[] sigBytes = fetchBytes(
-                AffiliateConfig.REMOTE_MAPPINGS_SIG_URL + "?t=" + now / 1000);
-        if (sigBytes == null || !verifySignature(jsonBytes, sigBytes)) {
-            Log.w(TAG, "remote mappings signature missing/invalid; keeping current");
-            return;
-        }
+                // Fail closed: the file is applied only if its detached RSA
+                // signature verifies. A missing/bad signature (e.g. repo
+                // compromise or MITM) keeps the current mappings instead of
+                // applying evil URLs.
+                byte[] jsonBytes = jsonFuture.get(30, TimeUnit.SECONDS);
+                if (jsonBytes == null) return;
+                byte[] sigBytes = sigFuture.get(30, TimeUnit.SECONDS);
+                if (sigBytes == null || !verifySignature(jsonBytes, sigBytes)) {
+                    Log.w(TAG, "remote mappings signature missing/invalid; keeping current");
+                    return;
+                }
 
-        ParsedMappings parsed =
-                parseMappingsJson(new String(jsonBytes, StandardCharsets.UTF_8));
-        Log.i(TAG, "remote mappings signature verified (v" + parsed.version + ")");
-        AffiliateManager mgr = get(app);
-        if (parsed.version > mgr.mappingVersion && !parsed.entries.isEmpty()) {
-            writeCacheFile(app, CACHE_FILE, jsonBytes);
-            writeCacheFile(app, CACHE_SIG_FILE, sigBytes);
-            mgr.applyParsed(parsed);
-            Log.i(TAG, "applied verified remote affiliate mappings v"
-                    + parsed.version);
+                ParsedMappings parsed =
+                        parseMappingsJson(new String(jsonBytes, StandardCharsets.UTF_8));
+                Log.i(TAG, "remote mappings signature verified (v" + parsed.version + ")");
+                AffiliateManager mgr = get(app);
+                if (parsed.version > mgr.mappingVersion && !parsed.entries.isEmpty()) {
+                    writeCacheFile(app, CACHE_FILE, jsonBytes);
+                    writeCacheFile(app, CACHE_SIG_FILE, sigBytes);
+                    mgr.applyParsed(parsed);
+                    Log.i(TAG, "applied verified remote affiliate mappings v"
+                            + parsed.version);
+                }
+            } finally {
+                pool.shutdownNow();
+            }
+        } finally {
+            // Record the attempt AFTER it completes: an offline cold start
+            // must not suppress the next check for the whole interval.
+            prefs.edit().putLong(KEY_LAST_CHECK, System.currentTimeMillis()).apply();
         }
     }
 
-    /** GET bytes; null on any failure (offline, non-200, timeout). */
+    /**
+     * GET bytes; null on any failure (offline, non-200, timeout).
+     * One retry with backoff: this runs at most once a day, so a second
+     * attempt on a transient failure is cheap and avoids a stale day.
+     */
     private static byte[] fetchBytes(String url) {
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            byte[] bytes = fetchBytesOnce(url);
+            if (bytes != null) return bytes;
+            if (attempt == 1) {
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static byte[] fetchBytesOnce(String url) {
         HttpURLConnection conn = null;
         try {
             conn = (HttpURLConnection) new URL(url).openConnection();

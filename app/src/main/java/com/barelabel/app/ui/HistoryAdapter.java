@@ -26,6 +26,9 @@ import java.util.Set;
 /** RecyclerView adapter for the scan-history list, with an optional 2-pick compare mode. */
 public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHolder> {
 
+    private static final int C_GREEN_800 = android.graphics.Color.parseColor("#166534");
+    private static final int C_RED_800 = android.graphics.Color.parseColor("#991B1B");
+
     public interface Listener {
         void onItemClicked(ScannedProduct product);
         void onDeleteClicked(ScannedProduct product);
@@ -103,7 +106,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
 
         boolean clean = p.clean;
         h.pill.setText(clean ? "✓ CLEAN" : "⚠ DIRTY");
-        h.pill.setTextColor(Color.parseColor(clean ? "#166534" : "#991B1B"));
+        h.pill.setTextColor((clean ? C_GREEN_800 : C_RED_800));
         h.pill.setBackgroundResource(clean ? R.drawable.chip_clean_background
                 : R.drawable.chip_dirty_background);
 

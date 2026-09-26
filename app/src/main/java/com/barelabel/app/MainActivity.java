@@ -47,6 +47,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import com.barelabel.app.model.AlternateSearchResult;
 import com.barelabel.app.model.ProductResult;
@@ -64,6 +68,11 @@ import android.widget.CheckBox;
 
 
 public class MainActivity extends AppCompatActivity {
+
+    private static final int C_GREEN_800 = android.graphics.Color.parseColor("#166534");
+    private static final int C_GRAY_600 = android.graphics.Color.parseColor("#4B5563");
+    private static final int C_RED_900 = android.graphics.Color.parseColor("#7F1D1D");
+    private static final int C_RED_800 = android.graphics.Color.parseColor("#991B1B");
 
     // Member Variable Declarations
     private EditText searchBox;
@@ -114,6 +123,12 @@ public class MainActivity extends AppCompatActivity {
     // USDA record behind the last tapped autocomplete suggestion (0 = none/typed query).
     private long selectedSuggestionFdcId = 0;
     private String selectedSuggestionLabel = "";
+    /**
+     * Monotonic search generation. Bumped on every search() so a slow
+     * earlier search can never overwrite a newer search's results or
+     * re-enable the UI while a newer search is still running.
+     */
+    private volatile int searchGeneration = 0;
 
     private final Set<String> superiorTerms = new HashSet<>();
 
@@ -394,7 +409,18 @@ setupCategoryFilterPanel();
             return;
         }
         AnalyticsTracker.searchPerformed(product.length());
-        RecentSearches.add(this, product);
+
+        // Consume the tapped-suggestion state here on the UI thread, before
+        // the worker starts: a second search issued while the first is still
+        // fetching must never see the first search's fdcId.
+        final long fdcId = selectedSuggestionLabel.equals(product)
+                ? selectedSuggestionFdcId : 0;
+        selectedSuggestionFdcId = 0;
+        selectedSuggestionLabel = "";
+
+        // Every search bumps the generation; a slow earlier search's UI
+        // posts are dropped once a newer search has started.
+        final int generation = ++searchGeneration;
 
         // Collapse the filter panel into its summary bar once a search is issued.
         if (categoryFilterPanel != null && filterSummaryBar != null) {
@@ -414,18 +440,16 @@ setupCategoryFilterPanel();
         ingredientsText.setText("");
 
         new Thread(() -> {
+            // Disk I/O off the UI thread.
+            RecentSearches.add(MainActivity.this, product);
             try {
                 // 1. Fetch primary product. A tapped USDA suggestion carries its
                 //    fdcId, so fetch that exact record instead of re-running a
                 //    fuzzy text search on the display label.
-                long fdcId = selectedSuggestionLabel.equals(product)
-                        ? selectedSuggestionFdcId : 0;
                 final boolean fetchedById = fdcId > 0;
                 ProductResult primaryResult = fetchedById
                         ? usdaApiClient.fetchFoodById(fdcId)
                         : usdaApiClient.searchPrimary(product);
-                selectedSuggestionFdcId = 0;
-                selectedSuggestionLabel = "";
 
                 // 2. Category: prefer the USDA API's own foodCategory for this product;
                 //    fall back to the rule-based classifier only when the API has none.
@@ -452,16 +476,24 @@ setupCategoryFilterPanel();
                 final boolean finalCategoryIntent = categoryIntent;
                 final Set<String> finalFlaggedCategories = altSearch.flaggedCategories;
                 final Map<String, Integer> finalReliefCounts = altSearch.filterBlockCounts;
-                runOnUiThread(() -> showResult(primaryResult, finalCategory, finalCategoryIntent,
-                        finalFlaggedCategories, finalReliefCounts, fetchedById));
+                runOnUiThread(() -> {
+                    if (generation != searchGeneration) return; // superseded
+                    showResult(primaryResult, finalCategory, finalCategoryIntent,
+                            finalFlaggedCategories, finalReliefCounts, fetchedById);
+                });
 
             } catch (Exception e) {
                 runOnUiThread(() -> {
+                    if (generation != searchGeneration) return; // superseded
                     statusText.setText("Couldn't retrieve product information.");
                     ingredientsText.setText("Please check your internet connection and try again.");
                 });
             } finally {
                 runOnUiThread(() -> {
+                    // Only the latest search may hide progress / re-enable the
+                    // button — an older search finishing late must not undo
+                    // the newer search's in-flight UI state.
+                    if (generation != searchGeneration) return;
                     progress.setVisibility(ProgressBar.GONE);
                     searchButton.setEnabled(true);
                 });
@@ -531,9 +563,9 @@ setupCategoryFilterPanel();
 
     resultCard.setVisibility(View.VISIBLE);
 
-    int colorClean = Color.parseColor("#166534");
-    int colorDirty = Color.parseColor("#991B1B");
-    int colorMuted = Color.parseColor("#4B5563");
+    int colorClean = C_GREEN_800;
+    int colorDirty = C_RED_800;
+    int colorMuted = C_GRAY_600;
 
     // Hide the separate primary ingredients card entirely
     if (ingredientsCard != null) {
@@ -579,13 +611,18 @@ setupCategoryFilterPanel();
         productTitleText.setVisibility(View.VISIBLE);
     }
     // Product thumbnail + friendlier OFF name (conditional: hidden/absent when unavailable).
+    final android.widget.TextView affiliateDisclosureView =
+            findViewById(R.id.affiliateDisclosure);
     if (productImageView != null) {
         productImageView.setVisibility(View.GONE);
         productImageView.setTag(result.gtinUpc);
         final String verdictGtin = result.gtinUpc;
+        final ProductResult verdictResult = result;
+        // Warm the memory cache from disk so the Buy flow's synchronous
+        // getCached() hits even before the async resolve() below completes.
+        com.barelabel.app.images.ProductImageResolver.warmFromDisk(this, verdictGtin);
         com.barelabel.app.images.ProductImageResolver.resolve(
-                this, verdictGtin, info -> {
-                    if (!java.util.Objects.equals(verdictGtin, productImageView.getTag())) return;
+                this, verdictGtin, info -> {                    if (!java.util.Objects.equals(verdictGtin, productImageView.getTag())) return;
                     if (info == null) return;
                     if (info.hasImage()) {
                         productImageView.setVisibility(View.VISIBLE);
@@ -598,6 +635,10 @@ setupCategoryFilterPanel();
                         productTitleText.setText(
                                 StringNormalizer.toTitleCase(info.displayName()));
                     }
+                    // OFF data arrived after bind: re-evaluate the FTC
+                    // disclosure, which may have been decided on a cold cache.
+                    updateAffiliateDisclosure(verdictResult, info,
+                            affiliateDisclosureView);
                 });
     }
 
@@ -634,8 +675,6 @@ setupCategoryFilterPanel();
     new Thread(() -> ScanHistoryRepository.saveScan(MainActivity.this, scannedResult)).start();
 
     // 1. BUY Button Visibility (+ FTC disclosure shown with it)
-    android.widget.TextView affiliateDisclosure =
-            findViewById(R.id.affiliateDisclosure);
     if (buyButton != null) {
         if (isClean) {
             buyButton.setVisibility(View.VISIBLE);
@@ -647,19 +686,12 @@ setupCategoryFilterPanel();
         } else {
             buyButton.setVisibility(View.GONE);
         }
-        if (affiliateDisclosure != null) {
-            // FTC disclosure only when the item itself has affiliate links,
-            // not for plain search-fallback Buy links.
-            com.barelabel.app.images.ProductImageResolver.OffProductInfo off =
-                    com.barelabel.app.images.ProductImageResolver.getCached(
-                            this, result == null ? "" : result.gtinUpc);
-            boolean buyVisible = buyButton.getVisibility() == View.VISIBLE;
-            boolean hasAffiliate = buyVisible
-                    && com.barelabel.app.affiliate.AffiliateNavigator
-                            .hasAffiliateLinks(this, result, off);
-            affiliateDisclosure.setVisibility(
-                    hasAffiliate ? View.VISIBLE : View.GONE);
-        }
+        // Immediate pass on whatever the memory cache holds (may be cold —
+        // the resolve() callback above re-evaluates once OFF data arrives).
+        updateAffiliateDisclosure(result,
+                com.barelabel.app.images.ProductImageResolver.getCached(
+                        this, result == null ? "" : result.gtinUpc),
+                affiliateDisclosureView);
     }
 
     // 2. Verdict Card Styling & Flagged List Output
@@ -688,7 +720,7 @@ setupCategoryFilterPanel();
 
                 builder.setSpan(new android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
                         startCategory, endCategory, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                builder.setSpan(new android.text.style.ForegroundColorSpan(Color.parseColor("#7F1D1D")),
+                builder.setSpan(new android.text.style.ForegroundColorSpan(C_RED_900),
                         startCategory, endCategory, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
 
                 for (String matchedIngredient : entry.getValue()) {
@@ -786,6 +818,24 @@ private void uncheckFilterCategory(String category) {
 }
 
 /**
+ * FTC disclosure visibility for the verdict card's Buy button. Shown only
+ * when the item itself has affiliate links, not for plain search-fallback
+ * Buy links. Called twice per bind: immediately on the (possibly cold)
+ * memory cache, and again when the async OFF resolve delivers — so the
+ * disclosure corrects itself once product data arrives.
+ */
+private void updateAffiliateDisclosure(ProductResult result,
+        com.barelabel.app.images.ProductImageResolver.OffProductInfo off,
+        android.widget.TextView disclosureView) {
+    if (disclosureView == null || buyButton == null) return;
+    boolean buyVisible = buyButton.getVisibility() == View.VISIBLE;
+    boolean hasAffiliate = buyVisible
+            && com.barelabel.app.affiliate.AffiliateNavigator
+                    .hasAffiliateLinks(this, result, off);
+    disclosureView.setVisibility(hasAffiliate ? View.VISIBLE : View.GONE);
+}
+
+/**
  * Per-category pass/fail chips under the verdict: green "✓ No X" for enabled
  * categories with no flagged match, red "⚠ X" for the ones that fired.
  */
@@ -809,7 +859,7 @@ private void bindVerdictChips(ProductResult result) {
         chip.setText(isFailed ? "⚠ " + category
                 : "✓ No " + category.toLowerCase(Locale.US));
         chip.setTextSize(12f);
-        chip.setTextColor(Color.parseColor(isFailed ? "#991B1B" : "#166534"));
+        chip.setTextColor((isFailed ? C_RED_800 : C_GREEN_800));
         chip.setBackgroundResource(isFailed ? R.drawable.chip_dirty_background
                 : R.drawable.chip_clean_background);
         int hPad = dp(10), vPad = dp(5);
@@ -889,7 +939,8 @@ private boolean saveProductToHistory(ProductResult p) {
             || p.ingredients.trim().isEmpty()) {
         return false;
     }
-    ScanHistoryRepository.saveScan(this, p);
+    // Disk I/O off the UI thread; the toast confirms intent, not completion.
+    new Thread(() -> ScanHistoryRepository.saveScan(MainActivity.this, p)).start();
     Toast.makeText(this, "Saved to history", Toast.LENGTH_SHORT).show();
     return true;
 }
@@ -977,10 +1028,31 @@ private void showFullIngredientsDialog(ProductResult product) {
             try {
                 // Try GTIN spellings: as-scanned, then with leading zeros stripped
                 // (USDA stores gtinUpc as printed, e.g. 12-digit UPC-A).
+                // The spellings are independent queries, so run them in
+                // parallel; candidate order still decides priority.
+                List<String> candidates = gtinCandidates(gtin);
                 JSONObject match = null;
-                for (String candidate : gtinCandidates(gtin)) {
-                    match = usdaApiClient.findFoodByGtin(candidate);
-                    if (match != null) break;
+                if (candidates.size() == 1) {
+                    match = usdaApiClient.findFoodByGtin(candidates.get(0));
+                } else {
+                    ExecutorService pool = Executors.newFixedThreadPool(candidates.size());
+                    try {
+                        List<Future<JSONObject>> futures = new ArrayList<>();
+                        for (String candidate : candidates) {
+                            final String c = candidate;
+                            futures.add(pool.submit(
+                                    () -> usdaApiClient.findFoodByGtin(c)));
+                        }
+                        for (Future<JSONObject> f : futures) {
+                            JSONObject m = f.get(30, TimeUnit.SECONDS);
+                            if (m != null) {
+                                match = m;
+                                break;
+                            }
+                        }
+                    } finally {
+                        pool.shutdownNow();
+                    }
                 }
 
                 if (match != null) {

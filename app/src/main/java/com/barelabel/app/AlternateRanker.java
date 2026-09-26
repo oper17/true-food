@@ -7,6 +7,7 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.Locale;
 import java.util.regex.Pattern;
 
 public class AlternateRanker {
@@ -90,6 +91,24 @@ public class AlternateRanker {
         return rankAndFilter(rawAlternates, superiorTerms, false);
     }
 
+    /** All ranking inputs for one product, computed exactly once (not per comparison). */
+    private static final class Scored {
+        final ProductResult item;
+        final int ingredientCount;
+        final int superiorCount;
+        final boolean hasOrganic;
+        final boolean nonGmo;
+
+        Scored(ProductResult item, int ingredientCount, int superiorCount,
+               boolean hasOrganic, boolean nonGmo) {
+            this.item = item;
+            this.ingredientCount = ingredientCount;
+            this.superiorCount = superiorCount;
+            this.hasOrganic = hasOrganic;
+            this.nonGmo = nonGmo;
+        }
+    }
+
     /**
      * Same as above, but with prefer-organic on the ranking becomes:
      * items with an organic ingredient first (3 stars), then non-GMO items,
@@ -100,71 +119,84 @@ public class AlternateRanker {
             Set<String> superiorTerms,
             boolean preferOrganic) {
 
-        List<ProductResult> cleanOnly = new ArrayList<>();
-
-        // 1. Filter out flagged items
-        for (ProductResult item : rawAlternates) {
-            if (item.flagged == null || item.flagged.isEmpty()) {
-                cleanOnly.add(item);
+        // Pre-lowercase the superior terms once — the old code lowercased
+        // every term inside every countSuperiorTerms call (per comparison).
+        List<String> lowerSuperior = new ArrayList<>();
+        if (superiorTerms != null) {
+            for (String term : superiorTerms) {
+                if (term != null) lowerSuperior.add(term.toLowerCase(Locale.US));
             }
         }
 
-        if (cleanOnly.isEmpty()) {
+        // 1. Filter out flagged items and precompute every score once.
+        // The old code recomputed these inside the sort comparator
+        // (O(n log n) regex + substring scans) and then again below.
+        List<Scored> scored = new ArrayList<>();
+        for (ProductResult item : rawAlternates) {
+            if (item.flagged != null && !item.flagged.isEmpty()) {
+                continue;
+            }
+            String lowerText = ((item.name == null ? "" : item.name) + " "
+                    + (item.ingredients == null ? "" : item.ingredients)).toLowerCase(Locale.US);
+            int supCount = 0;
+            for (String term : lowerSuperior) {
+                if (lowerText.contains(term)) supCount++;
+            }
+            // hasOrganicIngredient historically matches ingredients only —
+            // keep that exact semantic.
+            String ingredientsText = item.ingredients == null ? "" : item.ingredients;
+            scored.add(new Scored(item, countIngredients(item), supCount,
+                    ORGANIC_PATTERN.matcher(ingredientsText).find(),
+                    NON_GMO_PATTERN.matcher(lowerText).find()));
+        }
+
+        if (scored.isEmpty()) {
             return new ArrayList<>();
         }
 
-        // 2. Sort
+        // 2. Sort on the precomputed scores — the comparator does no
+        // string work at all now.
+        Comparator<Scored> bySuperiorThenCount = (a, b) -> {
+            if (a.superiorCount != b.superiorCount) {
+                return Integer.compare(b.superiorCount, a.superiorCount);
+            }
+            return Integer.compare(a.ingredientCount, b.ingredientCount);
+        };
         if (preferOrganic) {
-            Collections.sort(cleanOnly, (a, b) -> {
-                int orgA = hasOrganicIngredient(a) ? 0 : 1;
-                int orgB = hasOrganicIngredient(b) ? 0 : 1;
+            Collections.sort(scored, (a, b) -> {
+                int orgA = a.hasOrganic ? 0 : 1;
+                int orgB = b.hasOrganic ? 0 : 1;
                 if (orgA != orgB) {
                     return Integer.compare(orgA, orgB); // organic first
                 }
-                int gmoA = isNonGmo(a) ? 0 : 1;
-                int gmoB = isNonGmo(b) ? 0 : 1;
+                int gmoA = a.nonGmo ? 0 : 1;
+                int gmoB = b.nonGmo ? 0 : 1;
                 if (gmoA != gmoB) {
                     return Integer.compare(gmoA, gmoB); // non-GMO next
                 }
-                int supA = countSuperiorTerms(a, superiorTerms);
-                int supB = countSuperiorTerms(b, superiorTerms);
-                if (supA != supB) {
-                    return Integer.compare(supB, supA); // higher superior count first
-                }
-                return Integer.compare(countIngredients(a), countIngredients(b));
+                return bySuperiorThenCount.compare(a, b);
             });
         } else {
-            Collections.sort(cleanOnly, (a, b) -> {
-                int supA = countSuperiorTerms(a, superiorTerms);
-                int supB = countSuperiorTerms(b, superiorTerms);
-                if (supA != supB) {
-                    return Integer.compare(supB, supA); // Higher superior count comes first
-                }
-                return Integer.compare(countIngredients(a), countIngredients(b)); // Fewer ingredients comes first
-            });
+            Collections.sort(scored, bySuperiorThenCount);
         }
 
         // 3. Assign Ranks
         List<RankedProduct> rankedList = new ArrayList<>();
         int currentRank = 1;
 
-        for (int i = 0; i < cleanOnly.size(); i++) {
-            ProductResult item = cleanOnly.get(i);
-            int ingCount = countIngredients(item);
-            int supCount = countSuperiorTerms(item, superiorTerms);
+        for (int i = 0; i < scored.size(); i++) {
+            Scored s = scored.get(i);
 
             if (i > 0) {
-                ProductResult prev = cleanOnly.get(i - 1);
-                int prevSup = countSuperiorTerms(prev, superiorTerms);
-                int prevIng = countIngredients(prev);
-
-                if (supCount < prevSup || ingCount > prevIng) {
+                Scored prev = scored.get(i - 1);
+                if (s.superiorCount < prev.superiorCount
+                        || s.ingredientCount > prev.ingredientCount) {
                     currentRank++;
                 }
             }
 
-            rankedList.add(new RankedProduct(item, currentRank, ingCount, supCount,
-                    hasOrganicIngredient(item), isNonGmo(item), preferOrganic));
+            rankedList.add(new RankedProduct(s.item, currentRank, s.ingredientCount,
+                    s.superiorCount, s.hasOrganic, s.nonGmo, preferOrganic));
         }
 
         return rankedList;
@@ -179,10 +211,10 @@ public class AlternateRanker {
 
     public static int countSuperiorTerms(ProductResult item, Set<String> superiorTerms) {
         if (superiorTerms == null || superiorTerms.isEmpty()) return 0;
-        String text = (item.name + " " + item.ingredients).toLowerCase();
+        String text = (item.name + " " + item.ingredients).toLowerCase(Locale.US);
         int count = 0;
         for (String term : superiorTerms) {
-            if (text.contains(term.toLowerCase())) {
+            if (text.contains(term.toLowerCase(Locale.US))) {
                 count++;
             }
         }
