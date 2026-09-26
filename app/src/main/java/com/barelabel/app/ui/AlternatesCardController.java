@@ -22,6 +22,7 @@ import com.barelabel.app.AnalyticsTracker;
 import com.barelabel.app.FlaggedIngredientManager;
 import com.barelabel.app.R;
 import com.barelabel.app.model.ProductResult;
+import com.barelabel.app.pricing.PriceFetcher;
 import com.barelabel.app.util.StringNormalizer;
 
 import java.util.ArrayList;
@@ -366,9 +367,9 @@ public class AlternatesCardController {
                 }
 
                 bindStack(exactPanel, exactTitle, exactList, "Exact matches",
-                        exactRanked);
+                        exactRanked, true);
                 bindStack(morePanel, moreTitle, moreList, "More clean options",
-                        moreRanked);
+                        moreRanked, false);
 
                 if (!isRerank) {
                     AnalyticsTracker.alternatesViewed(
@@ -576,8 +577,12 @@ public class AlternatesCardController {
         if (morePanel != null) morePanel.setVisibility(View.GONE);
     }
 
+    /** How many rows at the top of the Exact matches stack get a live price. */
+    private static final int PRICE_ROW_COUNT = 3;
+
     private void bindStack(View panel, TextView panelTitle, LinearLayout list,
-                           String heading, List<AlternateRanker.RankedProduct> ranked) {
+                           String heading, List<AlternateRanker.RankedProduct> ranked,
+                           boolean fetchPrices) {
         if (panel == null) return;
         if (ranked.isEmpty()) {
             panel.setVisibility(View.GONE);
@@ -593,6 +598,30 @@ public class AlternatesCardController {
                 list.addView(buildRowView(ranked.get(i)));
                 if (i < ranked.size() - 1) {
                     list.addView(buildDivider());
+                }
+            }
+            // Prototype pricing: fetch live prices for the first few rows of the
+            // Exact matches stack only. Rows and dividers interleave, so row i
+            // lives at child index i*2.
+            if (fetchPrices) {
+                int n = Math.min(PRICE_ROW_COUNT, ranked.size());
+                for (int i = 0; i < n; i++) {
+                    AlternateRanker.RankedProduct rp = ranked.get(i);
+                    if (rp == null || rp.product == null) continue;
+                    final String gtin = rp.product.gtinUpc == null ? "" : rp.product.gtinUpc;
+                    final String tag = "price:" + gtin;
+                    View rowView = list.getChildAt(i * 2);
+                    final TextView priceView = rowView instanceof ViewGroup
+                            ? (TextView) ((ViewGroup) rowView).findViewWithTag(tag)
+                            : null;
+                    if (priceView == null) continue;
+                    PriceFetcher.fetch(gtin, result -> {
+                        // Row may have been rebound for a different product since.
+                        if (!TextUtils.equals(String.valueOf(priceView.getTag()), tag)) return;
+                        if (result == null) return;
+                        priceView.setText(result.displayText());
+                        priceView.setVisibility(View.VISIBLE);
+                    });
                 }
             }
         }
@@ -710,6 +739,18 @@ public class AlternatesCardController {
         metaView.setTextColor(Color.parseColor("#374151"));
         metaView.setPadding(0, dp(4), 0, 0);
         row.addView(metaView);
+
+        // Live price slot for the prototype pricing fetch (Exact matches stack
+        // only): hidden until a price resolves; tagged by GTIN so bindStack can
+        // find and update it, and stale callbacks can bail out.
+        TextView priceView = new TextView(ctx);
+        priceView.setTag("price:" + (alt.gtinUpc == null ? "" : alt.gtinUpc));
+        priceView.setTextSize(13f);
+        priceView.setTypeface(priceView.getTypeface(), Typeface.BOLD);
+        priceView.setTextColor(Color.parseColor("#047857"));
+        priceView.setPadding(0, dp(2), 0, 0);
+        priceView.setVisibility(View.GONE);
+        row.addView(priceView);
 
         // Open Food Facts enrichment: thumbnail, friendlier title, cleaner brand.
         // Single lookup; the resolver serves repeat calls from its memory cache.
