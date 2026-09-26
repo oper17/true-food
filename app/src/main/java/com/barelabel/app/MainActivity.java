@@ -638,7 +638,7 @@ setupCategoryFilterPanel();
                     // OFF data arrived after bind: re-evaluate the FTC
                     // disclosure, which may have been decided on a cold cache.
                     updateAffiliateDisclosure(verdictResult, info,
-                            affiliateDisclosureView);
+                            affiliateDisclosureView, buyButton);
                 });
     }
 
@@ -691,7 +691,7 @@ setupCategoryFilterPanel();
         updateAffiliateDisclosure(result,
                 com.barelabel.app.images.ProductImageResolver.getCached(
                         this, result == null ? "" : result.gtinUpc),
-                affiliateDisclosureView);
+                affiliateDisclosureView, buyButton);
     }
 
     // 2. Verdict Card Styling & Flagged List Output
@@ -826,7 +826,7 @@ private void uncheckFilterCategory(String category) {
  */
 private void updateAffiliateDisclosure(ProductResult result,
         com.barelabel.app.images.ProductImageResolver.OffProductInfo off,
-        android.widget.TextView disclosureView) {
+        android.widget.TextView disclosureView, android.widget.Button buyButton) {
     if (disclosureView == null || buyButton == null) return;
     boolean buyVisible = buyButton.getVisibility() == View.VISIBLE;
     boolean hasAffiliate = buyVisible
