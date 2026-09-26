@@ -4,6 +4,7 @@ import android.content.Context;
 import android.util.Log;
 
 import com.barelabel.app.model.Suggestion;
+import com.barelabel.app.search.UsdaSpamFilter;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -14,8 +15,10 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Scanner;
+import java.util.Set;
 
 public class UsdaSuggestionProvider implements SuggestionProvider {
 
@@ -36,7 +39,9 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
         }
 
         String trimmedQuery = query.trim();
-        String cacheKey = "usda_suggestions_" + trimmedQuery.toLowerCase();
+        // v2: larger page + spam filtering (see UsdaSpamFilter); old cached
+        // v1 responses are unfiltered, so they must not be reused.
+        String cacheKey = "usda_suggestions_v2_" + trimmedQuery.toLowerCase();
 
         // 1. Check local disk cache (7-day TTL)
         String body = null;
@@ -60,7 +65,9 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
             JSONArray dataTypes = new JSONArray();
             dataTypes.put("Branded");
             jsonPayload.put("dataType", dataTypes);
-            jsonPayload.put("pageSize", 8);
+            // 25 for re-ranking headroom: spam is filtered client-side and
+            // only the top 8 survivors are shown.
+            jsonPayload.put("pageSize", 25);
 
             JSONArray fields = new JSONArray();
             fields.put("fdcId");
@@ -93,10 +100,29 @@ public class UsdaSuggestionProvider implements SuggestionProvider {
             JSONArray foods = root.optJSONArray("foods");
 
             if (foods != null) {
-                for (int i = 0; i < foods.length(); i++) {
-                    JSONObject item = foods.getJSONObject(i);
+                // Rank (whole-word matches first, brand-spam last), drop
+                // spam, and dedupe by description — eight identical
+                // "BREAD (obscure brand)" rows help nobody.
+                List<JSONObject> ranked =
+                        UsdaSpamFilter.rankedCandidates(foods, trimmedQuery);
+                Set<String> seenDescriptions = new HashSet<String>();
+                for (JSONObject item : ranked) {
+                    if (suggestions.size() >= 8) {
+                        break;
+                    }
                     String description = item.optString("description", "");
-                    String brand = item.optString("brandOwner", "");
+                    String owner = item.optString("brandOwner", "");
+                    if (UsdaSpamFilter.isSpamBrand(owner)) {
+                        continue;
+                    }
+                    // Suggest the food-label brand; the owner stays only as
+                    // the spam signal above, not the display text.
+                    String labelBrand = item.optString("brandName", "");
+                    String brand = !labelBrand.isEmpty() ? labelBrand : owner;
+                    String descKey = UsdaSpamFilter.normalize(description);
+                    if (!descKey.isEmpty() && !seenDescriptions.add(descKey)) {
+                        continue;
+                    }
                     long fdcId = item.optLong("fdcId", 0);
 
                     String label = brand.isEmpty() ? description : description + " (" + brand + ")";

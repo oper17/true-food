@@ -106,8 +106,19 @@ public class CleanAlternateFinder {
             for (int i = 0; i < foods.length(); i++) {
                 JSONObject f = foods.getJSONObject(i);
                 String name = f.optString("description", "");
-                String brand = f.optString("brandOwner", f.optString("brandName", ""));
+                // Show the brand on the food label (what shoppers recognize);
+                // the brand owner is only a fallback — one owner often holds
+                // many unrelated brands.
+                String brandName = f.optString("brandName", "");
+                String brandOwner = f.optString("brandOwner", "");
+                String brand = !brandName.isEmpty() ? brandName : brandOwner;
                 String ingredients = f.optString("ingredients", "");
+
+                // Fake products filed under non-food companies (USDA spam)
+                // must not be recommended as clean choices.
+                if (UsdaSpamFilter.isSpamBrand(f.optString("brandOwner", ""))) {
+                    continue;
+                }
 
                 if (TextUtils.isEmpty(ingredients.trim())) {
                     continue;

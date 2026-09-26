@@ -203,8 +203,10 @@ public final class AffiliateNavigator {
 
     private static String brandOf(ProductResult product) {
         if (product == null) return "";
-        if (!TextUtils.isEmpty(product.brandOwner)) return product.brandOwner;
+        // product.brand is the food-label brand (brandName-first); fall back
+        // to the raw fields for results built before that change.
         if (!TextUtils.isEmpty(product.brand)) return product.brand;
-        return product.brandName == null ? "" : product.brandName;
+        if (!TextUtils.isEmpty(product.brandName)) return product.brandName;
+        return product.brandOwner == null ? "" : product.brandOwner;
     }
 }

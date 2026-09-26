@@ -238,7 +238,9 @@ public class UsdaAutoCompleteManager {
                 for (int i = 0; i < foods.length(); i++) {
                     JSONObject item = foods.getJSONObject(i);
                     String description = item.optString("description", "");
-                    String brand = item.optString("brandOwner", "");
+                    String acmBrandName = item.optString("brandName", "");
+                    String brand = !acmBrandName.isEmpty() ? acmBrandName
+                            : item.optString("brandOwner", "");
 
                     String label = brand.isEmpty() ? description : description + " (" + brand + ")";
                     if (!suggestions.contains(label)) {

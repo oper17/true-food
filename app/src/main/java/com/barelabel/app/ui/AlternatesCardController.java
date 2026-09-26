@@ -40,8 +40,10 @@ import java.util.Set;
  * <ul>
  *   <li><b>Exact matches</b> (green panel) — clean products passing the
  *       exact-match hard filter: for non-branded searches the description must
- *       contain ALL query tokens (any order); for branded searches any single
- *       query token suffices.</li>
+ *       contain ALL query tokens (any order) <i>and</i> the product's USDA
+ *       food category must equal the panel's category (so "Bread &amp; Butter
+ *       Pickles" is not an exact match for "bread"); for branded searches any
+ *       single query token suffices.</li>
  *   <li><b>More clean options</b> (blue panel) — the remaining clean products
  *       from the scanned pool.</li>
  * </ul>
@@ -85,6 +87,14 @@ public class AlternatesCardController {
      * requires ALL query tokens in the description, not just any one.
      */
     private boolean requireAllTokens = false;
+    /**
+     * The panel's food category (e.g. "Breads &amp; Buns") and whether it is
+     * USDA vocabulary. When true, category-search exact matches must belong
+     * to this USDA category. False when the category came from the rule-based
+     * classifier, which uses its own names ("Bread" vs "Breads &amp; Buns").
+     */
+    private String panelCategory = "";
+    private boolean panelCategoryIsUsda = false;
     /** Row keys (name|brand) currently expanded; preserved across re-ranks. */
     private final Set<String> expandedKeys = new HashSet<>();
 
@@ -188,12 +198,19 @@ public class AlternatesCardController {
      * search. For category searches the exact-match filter is strict (ALL
      * query tokens must appear); for branded searches it is lenient (any
      * token). The toggle re-ranks from these stacks.
+     *
+     * @param panelCategory the panel's food category; when
+     *        {@code panelCategoryIsUsda} is true, category-search exact
+     *        matches must also belong to this USDA category.
      */
     public void setPool(List<ProductResult> pool, Set<String> queryTokens,
-                        boolean categoryIntent) {
+                        boolean categoryIntent, String panelCategory,
+                        boolean panelCategoryIsUsda) {
         this.pool = pool != null ? pool : new ArrayList<>();
         this.queryTokens = queryTokens != null ? queryTokens : new HashSet<>();
         this.requireAllTokens = categoryIntent;
+        this.panelCategory = panelCategory != null ? panelCategory : "";
+        this.panelCategoryIsUsda = panelCategoryIsUsda;
         this.expandedKeys.clear();
         this.compareBoxes.clear();
         partitionPool();
@@ -444,7 +461,10 @@ public class AlternatesCardController {
      * Hard filter on the product description.
      * <ul>
      *   <li>Non-branded (category) search: the description must contain ALL
-     *       query tokens, in any order.</li>
+     *       query tokens, in any order, <i>and</i> the product's USDA food
+     *       category must equal the panel's category (when the panel category
+     *       is USDA vocabulary) — otherwise "Bread &amp; Butter Pickles"
+     *       counts as an exact match for "bread".</li>
      *   <li>Branded search: the description must share at least one query token.</li>
      * </ul>
      * Tokens shorter than 3 chars are ignored to avoid noise like "c". With no
@@ -464,7 +484,12 @@ public class AlternatesCardController {
                 return true;
             }
         }
-        return requireAllTokens && anyValidToken;
+        if (!(requireAllTokens && anyValidToken)) return false;
+        if (panelCategoryIsUsda && !panelCategory.trim().isEmpty()
+                && p.foodCategory != null && !p.foodCategory.trim().isEmpty()) {
+            return p.foodCategory.trim().equalsIgnoreCase(panelCategory.trim());
+        }
+        return true;
     }
 
     /** Ranks one stack with the shared ranking logic (no item cap — the stack scrolls). */

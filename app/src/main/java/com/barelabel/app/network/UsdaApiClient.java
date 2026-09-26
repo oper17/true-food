@@ -7,6 +7,7 @@ import com.barelabel.app.BuildConfig;
 import com.barelabel.app.FlaggedIngredientManager;
 import com.barelabel.app.UsdaResponseCache;
 import com.barelabel.app.model.ProductResult;
+import com.barelabel.app.search.UsdaSpamFilter;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -20,6 +21,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 /**
  * All USDA FoodData Central HTTP traffic: the primary product search, paged
@@ -43,7 +45,9 @@ public class UsdaApiClient {
      * returns ProductResult.notFound() when USDA has nothing usable.
      */
     public ProductResult searchPrimary(String productName) throws Exception {
-        String cacheKey = "usda_search3_" + productName.toLowerCase().trim();
+        // v4: larger page + spam filtering (see UsdaSpamFilter); old cached
+        // v3 responses are unfiltered, so they must not be reused.
+        String cacheKey = "usda_search4_" + productName.toLowerCase().trim();
 
         // 1. Check local disk cache (7-day TTL)
         String body = UsdaResponseCache.get(appContext, cacheKey);
@@ -56,7 +60,7 @@ public class UsdaApiClient {
                     + "?api_key=" + BuildConfig.USDA_API_KEY
                     + "&query=" + q
                     + "&dataType=Branded"
-                    + "&pageSize=10";
+                    + "&pageSize=25";
 
             HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
             try {
@@ -93,13 +97,27 @@ public class UsdaApiClient {
             return ProductResult.notFound();
         }
 
+        // Rank: whole-word matches first, brand-spam last. Skip spam when
+        // choosing — generic queries ("bread") otherwise land on fake
+        // records filed under non-food companies.
+        List<JSONObject> ranked = UsdaSpamFilter.rankedCandidates(foods, productName);
         JSONObject chosen = null;
-        for (int i = 0; i < foods.length(); i++) {
-            JSONObject f = foods.getJSONObject(i);
+        for (JSONObject f : ranked) {
+            if (UsdaSpamFilter.isSpamBrand(f.optString("brandOwner", ""))) {
+                continue;
+            }
             String ingredients = f.optString("ingredients", "");
             if (!TextUtils.isEmpty(ingredients.trim())) {
                 chosen = f;
                 break;
+            }
+        }
+        if (chosen == null) {
+            for (JSONObject f : ranked) {
+                if (!UsdaSpamFilter.isSpamBrand(f.optString("brandOwner", ""))) {
+                    chosen = f;
+                    break;
+                }
             }
         }
         if (chosen == null) chosen = foods.getJSONObject(0);
@@ -160,7 +178,10 @@ public class UsdaApiClient {
         String name = food.optString("description", fallbackName);
         String brandName = food.optString("brandName", "");
         String brandOwner = food.optString("brandOwner", "");
-        String brand = !brandOwner.isEmpty() ? brandOwner : brandName;
+        // Show the brand on the food label (what shoppers recognize); the
+        // brand owner is only a fallback — one owner often holds many
+        // unrelated brands ("Post Consumer Brands" vs "Oreo O's").
+        String brand = !brandName.isEmpty() ? brandName : brandOwner;
         String ingredients = food.optString("ingredients", "");
 
         // Process ingredients with FlaggedIngredientManager (JSON Engine)

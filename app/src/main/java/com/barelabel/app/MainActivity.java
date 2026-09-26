@@ -445,7 +445,7 @@ setupCategoryFilterPanel();
                         foodType, apiCategory, categoryIntent, primaryResult, product);
                 List<ProductResult> rawAlternates = altSearch.alternates;
                 alternatesController.setPool(rawAlternates, StringNormalizer.wordTokens(product),
-                        categoryIntent);
+                        categoryIntent, foodType, apiCategory);
 
                 // 5. Send to UI (the controller ranks each stack itself)
                 final String finalCategory = foodType;
@@ -985,7 +985,9 @@ private void showFullIngredientsDialog(ProductResult product) {
 
                 if (match != null) {
                     String description = match.optString("description", "");
-                    String brand = match.optString("brandOwner", match.optString("brandName", ""));
+                    String matchBrandName = match.optString("brandName", "");
+                    String brand = !matchBrandName.isEmpty() ? matchBrandName
+                            : match.optString("brandOwner", "");
 
                     if (!description.isEmpty()) {
                         productName = description;
