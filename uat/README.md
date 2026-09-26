@@ -61,6 +61,11 @@ wait, state, screenshot, buy query. Copy its `commands` array into
 `uat/commands.json`, set `enabled:true` and your webhook.site `resultUrl`,
 push, and watch results arrive.
 
+## Test plan
+
+`uat/UAT_PLAN.md` — 55 cases, each with a clear goal, exact driver commands,
+and observable pass criteria. Start there, not with ad-hoc feeds.
+
 ## Updating the feed
 
 The app polls the **committed** file on this branch, so updating commands is a
