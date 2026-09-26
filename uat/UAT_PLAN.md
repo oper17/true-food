@@ -1,6 +1,6 @@
 # BareLabel UAT Plan — debug driver
 
-55 cases. Each case states its goal in one line, the exact driver commands to
+64 cases. Each case states its goal in one line, the exact driver commands to
 run, and what to observe in the result / `getState` output. Run via
 `uat/commands.json` (see `uat/README.md`): push the case's commands, keep the
 app in the foreground, collect results from the webhook, evaluate against
@@ -185,6 +185,68 @@ live in §13 Manual-only.
 - **Goal:** Row meta lines ("N ingredients • M clean highlights") are computed, not garbage.
 - **Commands:** `search "bread"` → `wait 8000` → `getState`
 - **Expect:** Row texts contain plausible counts (N > 0); highlights ≤ ingredients.
+
+### Synonym & reformulation gaps (verified against config 2026-09-26)
+
+Method: replicated `FlaggedIngredientManager.phrasePattern` (whole-word,
+whitespace-tolerant, trailing-`s` plural) in Python and ran candidate synonyms
+against the shipped `flagged_ingredients.json`. Controls all HIT: corn syrup
+solids (via "corn syrup"), autolyzed yeast extract, sodium nitrite, modified
+food starch, high fructose corn syrup, red 40, caramel color, natural flavor.
+The cases below are the confirmed MISSES — each currently reads Clean and
+should FAIL until the config is extended. Evaluate per row: find a row whose
+ingredient text contains the synonym (human: read the full list on the phone
+screen; `getState` row text may truncate with …). If that row shows ✓ Clean
+(or no flagged entry for the category), the case fails as documented.
+
+Deliberate non-flag (do NOT "fix"): plain "sugar"/"cane sugar" is intentionally
+unflagged — ✓ Clean breads list organic cane sugar. The cases below target
+synonyms of *flagged* concepts only.
+
+### UAT-056 — Plain "yeast extract" flags as a flavor enhancer
+- **Goal:** The most common glutamate reformulation; config lists only "autolyzed yeast extract".
+- **Commands:** `search "veggie straws"` → `wait 8000` → `getState`
+- **Expect:** Any row with "yeast extract" in ingredients shows a Flavor Enhancers & Additives flag, not ✓ Clean. KNOWN GAP (verified): term missing → currently Clean. FAIL until config extended.
+
+### UAT-057 — "hydrolyzed soy protein" flags as a flavor enhancer
+- **Goal:** Protein-source variant; config lists only "hydrolyzed vegetable protein".
+- **Commands:** `search "ramen noodles"` → `wait 8000` → `getState`
+- **Expect:** Rows with "hydrolyzed soy protein" flagged under Flavor Enhancers & Additives. KNOWN GAP (verified). FAIL until config extended.
+
+### UAT-058 — "celery powder" / "celery juice powder" flags as a preservative
+- **Goal:** The classic "no nitrates added*" reformulation — a natural nitrite source.
+- **Commands:** `search "bacon"` → `wait 8000` → `getState`
+- **Expect:** Rows with celery powder/juice powder flagged under Preservatives. KNOWN GAP (verified): all three variants ("celery powder", "celery juice powder", "cultured celery powder") miss. FAIL until config extended.
+
+### UAT-059 — "modified corn starch" / "modified tapioca starch" flag
+- **Goal:** Starch-source variants; config lists only food/potato/"modified starch".
+- **Commands:** `search "canned soup"` → `wait 8000` → `getState`
+- **Expect:** Rows with either variant flagged under Emulsifiers & Thickening Agents. KNOWN GAP (verified). FAIL until config extended.
+
+### UAT-060 — "maltodextrin" flags as a processed sweetener/fiber
+- **Goal:** Ultra-processed starch filler in the same family as flagged isomalto-oligosaccharide.
+- **Commands:** `search "corn chips"` → `wait 8000` → `getState`
+- **Expect:** Rows with "maltodextrin" flagged under Processed Sweeteners & Fibers. KNOWN GAP (verified). FAIL until config extended.
+
+### UAT-061 — Standalone "dextrose" / "fructose" flag as processed sweeteners
+- **Goal:** Category currently lists only HFCS/corn syrup/IMO; standalone refined sugars slip through.
+- **Commands:** `search "gummy candy"` → `wait 8000` → `getState`
+- **Expect:** Rows with "dextrose" or "fructose" flagged under Processed Sweeteners & Fibers. KNOWN GAP (verified). FAIL until config extended.
+
+### UAT-062 — Label variant "Red No. 40" flags as artificial color
+- **Goal:** Real labels print "Red No. 40"; config has only "red 40" and the matcher is literal.
+- **Commands:** `search "candy"` → `wait 8000` → `getState`
+- **Expect:** Rows with "Red No. 40" flagged under Artificial Colors. KNOWN GAP (verified). FAIL until config extended. (Same class: "Yellow No. 5/6", "Blue No. 1/2".)
+
+### UAT-063 — Label variant "caramel coloring" flags as artificial color
+- **Goal:** "Caramel coloring" vs listed "caramel color" — same ingredient, different label wording.
+- **Commands:** `search "cola"` → `wait 8000` → `getState`
+- **Expect:** Rows with "caramel coloring" flagged under Artificial Colors. KNOWN GAP (verified). FAIL until config extended.
+
+### UAT-064 — Synonym controls still hit after config edits
+- **Goal:** Guard against regressions when the gaps above are fixed: existing terms must keep matching.
+- **Commands:** `search "bread"` → `wait 8000` → `getState` (spot-check any rows with corn syrup solids / caramel color / natural flavor)
+- **Expect:** The verified controls (UAT-056–063 header) still flag exactly as before. Run after every `flagged_ingredients.json` edit.
 
 ## 7. Pricing prototype
 
