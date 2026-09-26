@@ -106,7 +106,7 @@ public class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.ViewHold
 
         boolean clean = p.clean;
         h.pill.setText(clean ? "✓ CLEAN" : "⚠ DIRTY");
-        h.pill.setTextColor((clean ? C_GREEN_800 : C_RED_800));
+        h.pill.setTextColor(clean ? C_GREEN_800 : C_RED_800);
         h.pill.setBackgroundResource(clean ? R.drawable.chip_clean_background
                 : R.drawable.chip_dirty_background);
 

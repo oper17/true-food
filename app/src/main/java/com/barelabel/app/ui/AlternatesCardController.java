@@ -63,17 +63,17 @@ public class AlternatesCardController {
     // Palette, parsed once: Color.parseColor is surprisingly expensive
     // (string parsing per call) and these run per row during bind.
     private static final int C_GREEN_700 = Color.parseColor("#15803D");
-    private static final int C_GREEN_800 = C_GREEN_800;
-    private static final int C_BLUE_600 = C_BLUE_600;
-    private static final int C_ORANGE_700 = C_ORANGE_700;
-    private static final int C_EMERALD_700 = C_EMERALD_700;
-    private static final int C_GRAY_100 = C_GRAY_100;
-    private static final int C_GRAY_200 = C_GRAY_200;
-    private static final int C_GRAY_400 = C_GRAY_400;
-    private static final int C_GRAY_500 = C_GRAY_500;
-    private static final int C_GRAY_700 = C_GRAY_700;
-    private static final int C_GRAY_900 = C_GRAY_900;
-    private static final int C_WHITE = C_WHITE;
+    private static final int C_GREEN_800 = Color.parseColor("#166534");
+    private static final int C_BLUE_600 = Color.parseColor("#2563EB");
+    private static final int C_ORANGE_700 = Color.parseColor("#C2410C");
+    private static final int C_EMERALD_700 = Color.parseColor("#047857");
+    private static final int C_GRAY_100 = Color.parseColor("#F3F4F6");
+    private static final int C_GRAY_200 = Color.parseColor("#E5E7EB");
+    private static final int C_GRAY_400 = Color.parseColor("#9CA3AF");
+    private static final int C_GRAY_500 = Color.parseColor("#6B7280");
+    private static final int C_GRAY_700 = Color.parseColor("#374151");
+    private static final int C_GRAY_900 = Color.parseColor("#111827");
+    private static final int C_WHITE = Color.parseColor("#FFFFFF");
 
     private final AppCompatActivity activity;
     private final View card;

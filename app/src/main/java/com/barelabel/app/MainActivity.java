@@ -859,7 +859,7 @@ private void bindVerdictChips(ProductResult result) {
         chip.setText(isFailed ? "⚠ " + category
                 : "✓ No " + category.toLowerCase(Locale.US));
         chip.setTextSize(12f);
-        chip.setTextColor((isFailed ? C_RED_800 : C_GREEN_800));
+        chip.setTextColor(isFailed ? C_RED_800 : C_GREEN_800);
         chip.setBackgroundResource(isFailed ? R.drawable.chip_dirty_background
                 : R.drawable.chip_clean_background);
         int hPad = dp(10), vPad = dp(5);

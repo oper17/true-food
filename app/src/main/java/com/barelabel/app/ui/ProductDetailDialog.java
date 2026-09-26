@@ -47,7 +47,7 @@ public final class ProductDetailDialog {
         }
         content.setSpan(new StyleSpan(Typeface.BOLD),
                 verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        content.setSpan(new ForegroundColorSpan((isClean ? C_GREEN_800 : C_RED_800)),
+        content.setSpan(new ForegroundColorSpan(isClean ? C_GREEN_800 : C_RED_800),
                 verdictStart, content.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
 
         // Ingredients header

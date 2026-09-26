@@ -140,7 +140,7 @@ public final class CompareViewBuilder {
         pill.setText(clean ? "\u2713 CLEAN" : "\u26A0 DIRTY");
         pill.setTextSize(12f);
         pill.setTypeface(null, Typeface.BOLD);
-        pill.setTextColor((clean ? C_GREEN_800 : C_RED_800));
+        pill.setTextColor(clean ? C_GREEN_800 : C_RED_800);
         pill.setBackgroundResource(clean ? R.drawable.chip_clean_background
                 : R.drawable.chip_dirty_background);
         pill.setPadding(dp(context, 10), dp(context, 4), dp(context, 10), dp(context, 4));
@@ -211,7 +211,7 @@ public final class CompareViewBuilder {
         save.setText(alreadySaved ? "Saved \u2713" : "Save");
         save.setTextSize(14f);
         save.setTypeface(null, Typeface.BOLD);
-        save.setTextColor((alreadySaved ? C_GRAY_400 : C_GRAY_700));
+        save.setTextColor(alreadySaved ? C_GRAY_400 : C_GRAY_700);
         save.setPadding(dp(context, 12), dp(context, 6), dp(context, 12), dp(context, 6));
         save.setEnabled(!alreadySaved);
         save.setClickable(!alreadySaved);
